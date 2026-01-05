@@ -33,7 +33,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "CI=false react-scripts build && cp serve.json build/ 2>/dev/null || true",
+    "build": "CI=false react-scripts build && cp serve.json build/serve.json 2>/dev/null || true",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },

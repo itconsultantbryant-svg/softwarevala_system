@@ -1,13 +1,10 @@
 {
-  "public": "build",
   "rewrites": [
     {
       "source": "**",
       "destination": "/index.html"
     }
   ],
-  "cleanUrls": false,
-  "trailingSlash": false,
   "headers": [
     {
       "source": "/static/**",
