@@ -13,7 +13,7 @@ services:
     name: prinstine-frontend
     rootDir: client
     buildCommand: npm install && npm run build
-    startCommand: npx serve -s build -l ${PORT:-3000}
+    startCommand: npx serve -s build -l ${PORT:-3000} --no-clipboard --single
     envVars:
       - key: REACT_APP_API_URL
         sync: false
