@@ -13,6 +13,25 @@ const TopBar = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showNotifications || showProfileMenu) {
+        const target = event.target;
+        const isClickInside = target.closest('.topbar-item') || target.closest('.topbar-dropdown');
+        if (!isClickInside) {
+          setShowNotifications(false);
+          setShowProfileMenu(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showNotifications, showProfileMenu]);
+
   useEffect(() => {
     if (user) {
       // Initialize socket connection for real-time notifications
@@ -179,6 +198,109 @@ const TopBar = () => {
     }
   };
 
+  const handleNotificationClick = async (notification) => {
+    // Mark as read if not already read
+    if (!notification.is_read) {
+      await markAsRead(notification.id);
+    }
+    
+    // Close dropdown
+    setShowNotifications(false);
+    
+    // Handle navigation based on notification link
+    if (notification.link) {
+      const link = notification.link;
+      
+      // Parse the link to determine navigation behavior
+      if (link.startsWith('/attendance')) {
+        // For attendance, navigate to attendance page
+        navigate('/attendance');
+      } else if (link.startsWith('/requisitions/')) {
+        // Extract requisition ID
+        const requisitionId = link.split('/requisitions/')[1]?.split('?')[0]?.split('#')[0];
+        navigate('/requisitions');
+        // After navigation, try to find and highlight the requisition
+        setTimeout(() => {
+          // Try multiple selectors to find the requisition
+          const selectors = [
+            `[data-requisition-id="${requisitionId}"]`,
+            `[data-id="${requisitionId}"]`,
+            `tr[data-requisition-id="${requisitionId}"]`,
+            `.requisition-item[data-id="${requisitionId}"]`
+          ];
+          
+          let element = null;
+          for (const selector of selectors) {
+            element = document.querySelector(selector);
+            if (element) break;
+          }
+          
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            element.classList.add('highlight-item');
+            setTimeout(() => element.classList.remove('highlight-item'), 2000);
+          } else {
+            // If element not found, try to find by text content
+            const allElements = document.querySelectorAll('[data-requisition-id], [data-id]');
+            allElements.forEach(el => {
+              const id = el.getAttribute('data-requisition-id') || el.getAttribute('data-id');
+              if (id === requisitionId) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('highlight-item');
+                setTimeout(() => el.classList.remove('highlight-item'), 2000);
+              }
+            });
+          }
+        }, 800);
+      } else if (link.startsWith('/progress-reports/')) {
+        // Navigate to progress reports page
+        navigate('/reports');
+      } else if (link.startsWith('/department-reports')) {
+        navigate('/department-reports');
+      } else if (link.startsWith('/staff-client-reports/')) {
+        const reportId = link.split('/staff-client-reports/')[1]?.split('?')[0]?.split('#')[0];
+        navigate('/staff-client-reports');
+        if (reportId) {
+          setTimeout(() => {
+            const element = document.querySelector(`[data-report-id="${reportId}"]`);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.classList.add('highlight-item');
+              setTimeout(() => element.classList.remove('highlight-item'), 2000);
+            }
+          }, 800);
+        }
+      } else if (link.startsWith('/meetings/')) {
+        const meetingId = link.split('/meetings/')[1]?.split('?')[0]?.split('#')[0];
+        navigate('/meetings');
+        if (meetingId) {
+          setTimeout(() => {
+            const selectors = [
+              `[data-meeting-id="${meetingId}"]`,
+              `[data-id="${meetingId}"]`,
+              `tr[data-meeting-id="${meetingId}"]`
+            ];
+            
+            let element = null;
+            for (const selector of selectors) {
+              element = document.querySelector(selector);
+              if (element) break;
+            }
+            
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.classList.add('highlight-item');
+              setTimeout(() => element.classList.remove('highlight-item'), 2000);
+            }
+          }, 800);
+        }
+      } else {
+        // Default navigation - handle any other links
+        navigate(link);
+      }
+    }
+  };
+
   const markAllAsRead = async () => {
     try {
       await api.put('/notifications/read-all');
@@ -239,11 +361,7 @@ const TopBar = () => {
                       <div
                         key={notification.id}
                         className={`topbar-dropdown-item ${!notification.is_read ? 'unread' : ''}`}
-                        onClick={() => {
-                          if (!notification.is_read) markAsRead(notification.id);
-                          if (notification.link) navigate(notification.link);
-                          setShowNotifications(false);
-                        }}
+                        onClick={() => handleNotificationClick(notification)}
                       >
                         <div className="d-flex justify-content-between align-items-start">
                           <div className="flex-grow-1">

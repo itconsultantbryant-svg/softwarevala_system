@@ -151,6 +151,17 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         console.error('Error sending notification:', notifError);
       }
       
+      // Emit real-time update
+      if (global.io) {
+        global.io.emit('attendance_created', {
+          attendance: updated,
+          user_id: req.user.id
+        });
+        global.io.emit('admin_attendance_updated', {
+          attendance: updated
+        });
+      }
+      
       res.json({ 
         message: isBeforeOpening 
           ? 'Signed in before office hours. Awaiting admin approval.'
@@ -184,6 +195,17 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         });
       } catch (notifError) {
         console.error('Error sending notification:', notifError);
+      }
+      
+      // Emit real-time update
+      if (global.io) {
+        global.io.emit('attendance_created', {
+          attendance: newAttendance,
+          user_id: req.user.id
+        });
+        global.io.emit('admin_attendance_updated', {
+          attendance: newAttendance
+        });
       }
       
       res.status(201).json({ 
@@ -269,6 +291,17 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
       console.error('Error sending notification:', notifError);
     }
     
+    // Emit real-time update
+    if (global.io) {
+      global.io.emit('attendance_updated', {
+        attendance: updated,
+        user_id: req.user.id
+      });
+      global.io.emit('admin_attendance_updated', {
+        attendance: updated
+      });
+    }
+    
     res.json({ 
       message: isEarly 
         ? 'Signed out (early). Reason recorded. Awaiting admin approval.'
@@ -319,6 +352,18 @@ router.put('/:id/approve', authenticateToken, requireRole('Admin'), async (req, 
       });
     } catch (notifError) {
       console.error('Error sending notification:', notifError);
+    }
+    
+    // Emit real-time update
+    if (global.io) {
+      global.io.emit('attendance_updated', {
+        attendance: updated,
+        user_id: attendance.user_id
+      });
+      // Also emit to admin room
+      global.io.emit('admin_attendance_updated', {
+        attendance: updated
+      });
     }
     
     res.json({ 
@@ -486,6 +531,301 @@ router.get('/reports/:type', authenticateToken, requireRole('Admin'), async (req
   } catch (error) {
     console.error('Get attendance report error:', error);
     res.status(500).json({ error: 'Failed to fetch attendance report: ' + error.message });
+  }
+});
+
+// Enhanced admin view with weekly arrangement and requisitions (Admin only)
+router.get('/admin/view', authenticateToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const { user_id, week_start, date, month, year } = req.query;
+    
+    let attendanceQuery = `
+      SELECT 
+        sa.*,
+        u.name as user_name,
+        u.email as user_email,
+        approver.name as approver_name
+      FROM staff_attendance sa
+      LEFT JOIN users u ON sa.user_id = u.id
+      LEFT JOIN users approver ON sa.approved_by = approver.id
+      WHERE 1=1
+    `;
+    
+    const attendanceParams = [];
+    
+    // Filter by user if provided
+    if (user_id) {
+      attendanceQuery += ' AND sa.user_id = ?';
+      attendanceParams.push(user_id);
+    }
+    
+    // Filter by date
+    if (date) {
+      attendanceQuery += ' AND sa.attendance_date = ?';
+      attendanceParams.push(date);
+    }
+    
+    // Filter by week
+    if (week_start) {
+      const weekStartDate = new Date(week_start);
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 6);
+      attendanceQuery += ' AND sa.attendance_date >= ? AND sa.attendance_date <= ?';
+      attendanceParams.push(weekStartDate.toISOString().split('T')[0], weekEndDate.toISOString().split('T')[0]);
+    }
+    
+    // Filter by month
+    if (month && year) {
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0);
+      attendanceQuery += ' AND sa.attendance_date >= ? AND sa.attendance_date <= ?';
+      attendanceParams.push(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]);
+    }
+    
+    attendanceQuery += ' ORDER BY sa.attendance_date ASC, u.name ASC';
+    
+    const attendance = await db.all(attendanceQuery, attendanceParams);
+    
+    // Get requisitions for the same date range
+    let requisitionsQuery = `
+      SELECT 
+        r.*,
+        u.name as user_name,
+        u.email as user_email
+      FROM requisitions r
+      LEFT JOIN users u ON r.user_id = u.id
+      WHERE r.requisition_date IS NOT NULL
+    `;
+    
+    const requisitionsParams = [];
+    
+    // Apply same filters for requisitions
+    if (user_id) {
+      requisitionsQuery += ' AND r.user_id = ?';
+      requisitionsParams.push(user_id);
+    }
+    
+    if (date) {
+      requisitionsQuery += ' AND r.requisition_date = ?';
+      requisitionsParams.push(date);
+    }
+    
+    if (week_start) {
+      const weekStartDate = new Date(week_start);
+      const weekEndDate = new Date(weekStartDate);
+      weekEndDate.setDate(weekStartDate.getDate() + 6);
+      requisitionsQuery += ' AND r.requisition_date >= ? AND r.requisition_date <= ?';
+      requisitionsParams.push(weekStartDate.toISOString().split('T')[0], weekEndDate.toISOString().split('T')[0]);
+    }
+    
+    if (month && year) {
+      const startOfMonth = new Date(year, month - 1, 1);
+      const endOfMonth = new Date(year, month, 0);
+      requisitionsQuery += ' AND r.requisition_date >= ? AND r.requisition_date <= ?';
+      requisitionsParams.push(startOfMonth.toISOString().split('T')[0], endOfMonth.toISOString().split('T')[0]);
+    }
+    
+    // Only get approved or pending requisitions
+    requisitionsQuery += ' AND (r.status LIKE ? OR r.status LIKE ?)';
+    requisitionsParams.push('%Approved%', '%Pending%');
+    
+    requisitionsQuery += ' ORDER BY r.requisition_date ASC, u.name ASC';
+    
+    const requisitions = await db.all(requisitionsQuery, requisitionsParams);
+    
+    // Group attendance by user and week
+    const attendanceByUser = {};
+    attendance.forEach(record => {
+      if (!attendanceByUser[record.user_id]) {
+        attendanceByUser[record.user_id] = {
+          user_id: record.user_id,
+          user_name: record.user_name,
+          user_email: record.user_email,
+          weeks: {}
+        };
+      }
+      
+      // Get week start date for this attendance date
+      const attDate = new Date(record.attendance_date);
+      const weekStart = new Date(attDate);
+      weekStart.setDate(attDate.getDate() - attDate.getDay());
+      const weekKey = weekStart.toISOString().split('T')[0];
+      
+      if (!attendanceByUser[record.user_id].weeks[weekKey]) {
+        attendanceByUser[record.user_id].weeks[weekKey] = {
+          week_start: weekKey,
+          records: []
+        };
+      }
+      
+      attendanceByUser[record.user_id].weeks[weekKey].records.push(record);
+    });
+    
+    // Group requisitions by user and date
+    const requisitionsByUser = {};
+    requisitions.forEach(req => {
+      if (!requisitionsByUser[req.user_id]) {
+        requisitionsByUser[req.user_id] = {};
+      }
+      const reqDate = req.requisition_date;
+      if (!requisitionsByUser[req.user_id][reqDate]) {
+        requisitionsByUser[req.user_id][reqDate] = [];
+      }
+      requisitionsByUser[req.user_id][reqDate].push(req);
+    });
+    
+    // Merge requisitions into attendance records
+    Object.keys(attendanceByUser).forEach(userId => {
+      Object.keys(attendanceByUser[userId].weeks).forEach(weekKey => {
+        attendanceByUser[userId].weeks[weekKey].records.forEach(record => {
+          const recordDate = record.attendance_date;
+          if (requisitionsByUser[userId] && requisitionsByUser[userId][recordDate]) {
+            record.requisitions = requisitionsByUser[userId][recordDate];
+          } else {
+            record.requisitions = [];
+          }
+        });
+      });
+    });
+    
+    // Get all users for filter dropdown
+    const users = await db.all(`
+      SELECT id, name, email, role
+      FROM users
+      WHERE role IN ('Staff', 'DepartmentHead')
+      ORDER BY name ASC
+    `);
+    
+    res.json({
+      attendance_by_user: Object.values(attendanceByUser),
+      users,
+      summary: {
+        total_attendance: attendance.length,
+        total_requisitions: requisitions.length,
+        users_count: Object.keys(attendanceByUser).length
+      }
+    });
+  } catch (error) {
+    console.error('Get admin attendance view error:', error);
+    res.status(500).json({ error: 'Failed to fetch admin attendance view: ' + error.message });
+  }
+});
+
+// Export attendance to Excel (Admin only)
+router.get('/export/excel', authenticateToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const { user_id, start_date, end_date } = req.query;
+    
+    let query = `
+      SELECT 
+        sa.*,
+        u.name as user_name,
+        u.email as user_email,
+        approver.name as approver_name
+      FROM staff_attendance sa
+      LEFT JOIN users u ON sa.user_id = u.id
+      LEFT JOIN users approver ON sa.approved_by = approver.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (user_id) {
+      query += ' AND sa.user_id = ?';
+      params.push(user_id);
+    }
+    
+    if (start_date && end_date) {
+      query += ' AND sa.attendance_date >= ? AND sa.attendance_date <= ?';
+      params.push(start_date, end_date);
+    }
+    
+    query += ' ORDER BY sa.attendance_date DESC, u.name ASC';
+    
+    const attendance = await db.all(query, params);
+    
+    // Format data for Excel
+    const excelData = [
+      ['Date', 'Employee Name', 'Email', 'Sign In Time', 'Sign Out Time', 'Late', 'Early', 'Status', 'Approved By', 'Admin Notes']
+    ];
+    
+    attendance.forEach(record => {
+      excelData.push([
+        record.attendance_date || '',
+        record.user_name || '',
+        record.user_email || '',
+        record.sign_in_time ? new Date(record.sign_in_time).toLocaleString() : '',
+        record.sign_out_time ? new Date(record.sign_out_time).toLocaleString() : '',
+        record.sign_in_late ? 'Yes' : 'No',
+        record.sign_out_early ? 'Yes' : 'No',
+        record.status || '',
+        record.approver_name || '',
+        record.admin_notes || ''
+      ]);
+    });
+    
+    res.json({ data: excelData, filename: `attendance_export_${new Date().toISOString().split('T')[0]}.xlsx` });
+  } catch (error) {
+    console.error('Export attendance to Excel error:', error);
+    res.status(500).json({ error: 'Failed to export attendance: ' + error.message });
+  }
+});
+
+// Export attendance to PDF (Admin only)
+router.get('/export/pdf', authenticateToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const { user_id, start_date, end_date } = req.query;
+    
+    let query = `
+      SELECT 
+        sa.*,
+        u.name as user_name,
+        u.email as user_email,
+        approver.name as approver_name
+      FROM staff_attendance sa
+      LEFT JOIN users u ON sa.user_id = u.id
+      LEFT JOIN users approver ON sa.approved_by = approver.id
+      WHERE 1=1
+    `;
+    
+    const params = [];
+    
+    if (user_id) {
+      query += ' AND sa.user_id = ?';
+      params.push(user_id);
+    }
+    
+    if (start_date && end_date) {
+      query += ' AND sa.attendance_date >= ? AND sa.attendance_date <= ?';
+      params.push(start_date, end_date);
+    }
+    
+    query += ' ORDER BY sa.attendance_date DESC, u.name ASC';
+    
+    const attendance = await db.all(query, params);
+    
+    // Format data for PDF
+    const pdfData = {
+      title: 'Attendance Report',
+      dateRange: start_date && end_date ? `${start_date} to ${end_date}` : 'All Records',
+      records: attendance.map(record => ({
+        date: record.attendance_date,
+        employee: record.user_name || 'N/A',
+        email: record.user_email || 'N/A',
+        signIn: record.sign_in_time ? new Date(record.sign_in_time).toLocaleString() : 'N/A',
+        signOut: record.sign_out_time ? new Date(record.sign_out_time).toLocaleString() : 'N/A',
+        late: record.sign_in_late ? 'Yes' : 'No',
+        early: record.sign_out_early ? 'Yes' : 'No',
+        status: record.status || 'N/A',
+        approvedBy: record.approver_name || 'N/A',
+        notes: record.admin_notes || ''
+      }))
+    };
+    
+    res.json({ data: pdfData, filename: `attendance_export_${new Date().toISOString().split('T')[0]}.pdf` });
+  } catch (error) {
+    console.error('Export attendance to PDF error:', error);
+    res.status(500).json({ error: 'Failed to export attendance: ' + error.message });
   }
 });
 
