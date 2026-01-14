@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../config/api';
@@ -12,6 +12,37 @@ const TopBar = () => {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const notificationBtnRef = useRef(null);
+  const profileBtnRef = useRef(null);
+  const notificationDropdownRef = useRef(null);
+  const profileDropdownRef = useRef(null);
+
+  // Position dropdowns dynamically
+  useEffect(() => {
+    const updateDropdownPosition = () => {
+      if (showNotifications && notificationBtnRef.current && notificationDropdownRef.current) {
+        const rect = notificationBtnRef.current.getBoundingClientRect();
+        notificationDropdownRef.current.style.top = `${rect.bottom + 8}px`;
+        notificationDropdownRef.current.style.right = `${window.innerWidth - rect.right}px`;
+      }
+      if (showProfileMenu && profileBtnRef.current && profileDropdownRef.current) {
+        const rect = profileBtnRef.current.getBoundingClientRect();
+        profileDropdownRef.current.style.top = `${rect.bottom + 8}px`;
+        profileDropdownRef.current.style.right = `${window.innerWidth - rect.right}px`;
+      }
+    };
+
+    if (showNotifications || showProfileMenu) {
+      updateDropdownPosition();
+      window.addEventListener('resize', updateDropdownPosition);
+      window.addEventListener('scroll', updateDropdownPosition, true);
+    }
+
+    return () => {
+      window.removeEventListener('resize', updateDropdownPosition);
+      window.removeEventListener('scroll', updateDropdownPosition, true);
+    };
+  }, [showNotifications, showProfileMenu]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -332,6 +363,7 @@ const TopBar = () => {
           {/* Notifications */}
           <div className="topbar-item">
             <button
+              ref={notificationBtnRef}
               className="topbar-notification-btn"
               onClick={() => {
                 setShowNotifications(!showNotifications);
@@ -344,7 +376,7 @@ const TopBar = () => {
               )}
             </button>
             {showNotifications && (
-              <div className="topbar-dropdown notification-dropdown">
+              <div ref={notificationDropdownRef} className="topbar-dropdown notification-dropdown">
                 <div className="topbar-dropdown-header">
                   <h6 className="mb-0">Notifications</h6>
                   {unreadCount > 0 && (
@@ -396,6 +428,7 @@ const TopBar = () => {
           {/* Profile Menu */}
           <div className="topbar-item">
             <button
+              ref={profileBtnRef}
               className="topbar-profile-btn"
               onClick={() => {
                 setShowProfileMenu(!showProfileMenu);
@@ -428,7 +461,7 @@ const TopBar = () => {
               <i className="bi bi-chevron-down ms-2"></i>
             </button>
             {showProfileMenu && (
-              <div className="topbar-dropdown profile-dropdown">
+              <div ref={profileDropdownRef} className="topbar-dropdown profile-dropdown">
                 <Link
                   to="/profile"
                   className="topbar-dropdown-item"
