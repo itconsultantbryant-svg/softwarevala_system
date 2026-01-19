@@ -154,6 +154,10 @@ const AttendanceHistory = () => {
 
       const response = await api.get(`/attendance/admin/view?${params.toString()}`);
       setAdminView(response.data);
+      // Use users from admin view response (includes both Staff and DepartmentHead)
+      if (response.data.users) {
+        setUsers(response.data.users || []);
+      }
     } catch (error) {
       console.error('Error fetching admin view:', error);
     } finally {
@@ -163,8 +167,14 @@ const AttendanceHistory = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get('/users?role=Staff');
-      setUsers(response.data.users || []);
+      // Fetch both Staff and DepartmentHead users for attendance
+      const response = await api.get('/users');
+      const allUsers = response.data.users || [];
+      // Filter to only include Staff and DepartmentHead roles
+      const filteredUsers = allUsers.filter(u => 
+        u.role === 'Staff' || u.role === 'DepartmentHead'
+      );
+      setUsers(filteredUsers);
     } catch (error) {
       console.error('Error fetching users:', error);
     }
