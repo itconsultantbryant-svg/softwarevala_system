@@ -375,6 +375,13 @@ const Dashboard = () => {
                       <h3 className="mb-0">{stats.academy?.courses || 0}</h3>
                       <small className="text-muted">Courses</small>
                     </div>
+                    <div className="col-4">
+                      <div className="mb-2">
+                        <i className="bi bi-journal-bookmark" style={{ fontSize: '2rem', color: '#FFC107' }}></i>
+                      </div>
+                      <h3 className="mb-0">{stats.academy?.studentGrades || 0}</h3>
+                      <small className="text-muted">Student Grades</small>
+                    </div>
                   </div>
                   <div className="mt-3">
                     <Link to="/academy" className="btn btn-outline-primary w-100">
@@ -872,7 +879,109 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-
+      {/*if staff is a Human Resources Department Head, show the following: My Attendance, My Requisitions, My Targets, My Reports, My Clients, My Call Memos, My Proposals, My Meetings, My Calendar, My Archived Documents, My Attendance, My Requisitions, My Targets, My Reports, My Clients, My Call Memos, My Proposals, My Meetings, My Calendar, My Archived Documents, add staff, view staff, edit staff, delete staff, add client, view client, edit client, delete client, add proposal, view proposal, edit proposal, delete proposal, add meeting, view meeting, edit meeting, delete meeting, add calendar, view calendar, edit calendar, delete calendar, add archived document, view archived document, edit archived document, delete archived document, update staff, update client, update proposal, update meeting, update calendar, update archived document, manage staff attendance, manage client attendance, manage proposal attendance, manage meeting attendance, manage calendar attendance, manage archived document attendance, approve and reject attendance, approve and reject requisitions, approve and reject targets, approve and reject reports, approve and reject clients, approve and reject call memos, approve and reject proposals, approve and reject meetings, approve and reject calendar, approve and reject archived documents*/}
+      {user?.role === 'HumanResourcesDepartmentHead' && stats && (
+        <div className="row">
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Attendance</h5>
+                <p className="card-text">
+                  <strong>Pending:</strong> {stats.myAttendance?.pending || 0}<br />
+                  <strong>Approved:</strong> {stats.myAttendance?.approved || 0}<br />
+                  <strong>Not Signed In:</strong> {stats.myAttendance?.notSignedIn || 0}
+                </p>
+                <Link to="/staff-attendance" className="btn btn-primary">
+                  View Staff Attendance
+                </Link>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Requisitions</h5>
+                <p className="card-text">
+                  <strong>Pending:</strong> {stats.myRequisitions?.pending || 0}<br />
+                  <strong>Approved:</strong> {stats.myRequisitions?.approved || 0}<br />
+                  <strong>Rejected:</strong> {stats.myRequisitions?.rejected || 0}
+                </p>
+                <Link to="/requisitions" className="btn btn-primary">
+                  View Requisitions
+                </Link>  <Link to="/requisitions/add" className="btn btn-primary">Add Requisition</Link>
+                <Link to="/requisitions/edit /:id" className="btn btn-primary">Edit Requisition</Link>
+                <Link to="/requisitions/delete/:id" className="btn btn-primary">Delete Requisition</Link>
+                <Link to="/requisitions/view/:id" className="btn btn-primary">View Requisition</Link>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Targets</h5>
+                <p className="card-text">
+                  <strong>Total Targets:</strong> {stats.myTargets?.total || 0}<br />
+                  <strong>Pending:</strong> {stats.myTargets?.pending || 0}<br />
+                  <strong>Approved:</strong> {stats.myTargets?.approved || 0}<br />
+                  <strong>Rejected:</strong> {stats.myTargets?.rejected || 0}
+                </p>
+                <Link to="/targets" className="btn btn-primary">
+                  View Targets
+                </Link>
+                <Link to="/targets/add" className="btn btn-primary">Add Target</Link>
+                <Link to="/targets/edit/:id" className="btn btn-primary">Edit Target</Link>
+                <Link to="/targets/delete/:id" className="btn btn-primary">Delete Target</Link>
+                <Link to="/targets/view/:id" className="btn btn-primary">View Target</Link>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Reports</h5>
+                <p className="card-text">
+                  <strong>Pending:</strong> {stats.myReports?.pending || 0}<br />
+                  <strong>Total:</strong> {stats.myReports?.total || 0}
+                </p>
+                <Link to="/reports" className="btn btn-primary">
+                  View Reports
+                </Link>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Clients</h5>
+                <p className="card-text">
+                  <strong>Total Clients:</strong> {stats.myClients?.total || 0}
+                </p>
+                <Link to="/clients" className="btn btn-primary">
+                  View Clients
+                </Link>
+              </div>
+            </div>
+          </div>
+          <div className="col-md-6 mb-3">
+            <div className="card">
+              <div className="card-body">
+                <h5 className="card-title">My Call Memos</h5>
+                <p className="card-text">
+                  <strong>Total Call Memos:</strong> {stats.myCallMemos?.total || 0}
+                </p>
+                <Link to="/call-memos" className="btn btn-primary">
+                  View Call Memos
+                </Link>
+                <Link to="/proposals/add" className="btn btn-primary">Add Proposal</Link>
+                <Link to="/proposals/edit/:id" className="btn btn-primary">Edit Proposal</Link>
+                <Link to="/proposals/delete/:id" className="btn btn-primary">Delete Proposal</Link>
+                <Link to="/proposals/view/:id" className="btn btn-primary">View Proposal</Link>
+                <Link to="/proposals/view" className="btn btn-primary">View Proposals</Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}  
       {/* Student Dashboard */}
       {user?.role === 'Student' && stats && (
         <div className="row">
