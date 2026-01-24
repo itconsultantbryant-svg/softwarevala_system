@@ -15,7 +15,14 @@ const StudentForm = ({ student, onClose }) => {
     profile_image: '',
     courses_enrolled: [],
     cohort_id: '',
-    period: ''
+    period: '',
+    date_of_birth: '',
+    place_of_birth: '',
+    nationality: '',
+    gender: '',
+    marital_status: '',
+    national_id: '',
+    password: ''
   });
   const [courses, setCourses] = useState([]);
   const [cohorts, setCohorts] = useState([]);
@@ -49,7 +56,14 @@ const StudentForm = ({ student, onClose }) => {
         profile_image: student.profile_image || '',
         courses_enrolled: coursesEnrolled,
         cohort_id: student.cohort_id || '',
-        period: student.period || ''
+        period: student.period || '',
+        date_of_birth: student.date_of_birth || '',
+        place_of_birth: student.place_of_birth || '',
+        nationality: student.nationality || '',
+        gender: student.gender || '',
+        marital_status: student.marital_status || '',
+        national_id: student.national_id || '',
+        password: ''
       });
     }
   }, [student]);
@@ -138,7 +152,14 @@ const StudentForm = ({ student, onClose }) => {
         profile_image: formData.profile_image,
         courses_enrolled: formData.courses_enrolled,
         cohort_id: formData.cohort_id || null,
-        period: formData.period || null
+        period: formData.period || null,
+        date_of_birth: formData.date_of_birth || null,
+        place_of_birth: formData.place_of_birth || null,
+        nationality: formData.nationality || null,
+        gender: formData.gender || null,
+        marital_status: formData.marital_status || null,
+        national_id: formData.national_id || null,
+        password: formData.password || null
       };
 
       if (student) {
@@ -247,6 +268,31 @@ const StudentForm = ({ student, onClose }) => {
                 <small className="form-text text-muted">
                   Academic period or term (optional)
                 </small>
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Date of Birth</label>
+                <input type="date" className="form-control" name="date_of_birth" value={formData.date_of_birth} onChange={handleChange} />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Place of Birth</label>
+                <input type="text" className="form-control" name="place_of_birth" value={formData.place_of_birth} onChange={handleChange} />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Nationality</label>
+                <input type="text" className="form-control" name="nationality" value={formData.nationality} onChange={handleChange} />
+              </div>
+
+              <div className="mb-3">
+                <label className="form-label">Gender</label>
+                <select className="form-select" name="gender" value={formData.gender} onChange={handleChange}>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                  <option value="Prefer not to say">Prefer not to say</option>
+                </select>
               </div>
 
               <div className="mb-3">
