@@ -22,11 +22,9 @@ const Sidebar = () => {
         fetchUnreadFromAdmin();
       }
 
-      // Set up real-time socket connection for notifications
       const socket = getSocket();
       if (socket) {
         const handleNotification = (notification) => {
-          // Update unread count
           fetchUnreadCount();
           if (user.role === 'DepartmentHead' && notification.senderRole === 'Admin') {
             fetchUnreadFromAdmin();
@@ -35,7 +33,6 @@ const Sidebar = () => {
 
         socket.on('notification', handleNotification);
 
-        // Poll for updates every 30 seconds
         const interval = setInterval(() => {
           fetchUnreadCount();
           if (user.role === 'DepartmentHead') {
@@ -56,11 +53,9 @@ const Sidebar = () => {
       const response = await api.get('/notifications/unread-count');
       setUnreadCount(response.data.count || 0);
     } catch (error) {
-      // Only log if it's not a network error (connection issues are expected during offline periods)
       if (error.code !== 'ERR_NETWORK' && error.code !== 'ERR_INTERNET_DISCONNECTED' && error.message !== 'Network Error') {
-      console.error('Error fetching unread count:', error);
+        console.error('Error fetching unread count:', error);
       }
-      // Silently fail for network errors - they'll be retried on next connection
     }
   };
 
@@ -68,9 +63,7 @@ const Sidebar = () => {
     try {
       const response = await api.get('/notifications?limit=100');
       const notifications = response.data.notifications || [];
-      const fromAdmin = notifications.filter(n => 
-        !n.is_read && n.sender_role === 'Admin'
-      );
+      const fromAdmin = notifications.filter(n => !n.is_read && n.sender_role === 'Admin');
       setUnreadFromAdmin(fromAdmin.length);
     } catch (error) {
       console.error('Error fetching unread from admin:', error);
@@ -79,19 +72,16 @@ const Sidebar = () => {
 
   const checkFinanceAccess = async () => {
     try {
-      // Admin always has access
       if (user?.role === 'Admin') {
         setHasFinanceAccess(true);
         return;
       }
 
-      // Check if user is Finance Department Head
       if (user?.role === 'DepartmentHead') {
         const response = await api.get('/departments');
         const userEmailLower = user.email.toLowerCase().trim();
-        const financeDept = response.data.departments.find(d => 
-          (d.manager_id === user.id || 
-           (d.head_email && d.head_email.toLowerCase().trim() === userEmailLower)) &&
+        const financeDept = response.data.departments.find(d =>
+          (d.manager_id === user.id || (d.head_email && d.head_email.toLowerCase().trim() === userEmailLower)) &&
           d.name && d.name.toLowerCase().includes('finance')
         );
         if (financeDept) {
@@ -100,7 +90,6 @@ const Sidebar = () => {
         }
       }
 
-      // Check if user is Assistant Finance Officer (Staff in Finance department)
       if (user?.role === 'Staff') {
         const response = await api.get('/staff');
         const staffList = response.data.staff || [];
@@ -120,8 +109,6 @@ const Sidebar = () => {
 
   const handleLogout = () => {
     logout();
-    // logout() already handles redirect, but ensure it's consistent
-    // window.location.href is set in logout() function
   };
 
   const isActive = (path) => location.pathname === path;
@@ -131,7 +118,7 @@ const Sidebar = () => {
     { path: '/dashboard', label: 'Dashboard', icon: 'bi-house-door', roles: ['Admin'], section: 'dashboards' },
     { path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house-door', roles: ['Staff'], section: 'dashboards' },
     { path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building', roles: ['DepartmentHead'], section: 'dashboards' },
-    
+
     // Reports Section
     { path: '/department-report-history', label: 'Report History', icon: 'bi-clock-history', roles: ['DepartmentHead'], section: 'reports' },
     { path: '/my-reports-history', label: 'My Reports History', icon: 'bi-journal-text', roles: ['*'], section: 'reports' },
@@ -140,7 +127,7 @@ const Sidebar = () => {
     { path: '/reports', label: 'Reports', icon: 'bi-file-text', roles: ['Admin', 'Staff'], section: 'reports' },
     { path: '/call-memos', label: 'Call Memos', icon: 'bi-telephone', roles: ['*'], section: 'reports' },
     { path: '/proposals', label: 'Proposals', icon: 'bi-file-earmark-check', roles: ['*'], section: 'reports' },
-    
+
     // Communications Section
     { path: '/notifications-view', label: 'Notifications', icon: 'bi-bell-fill', roles: ['DepartmentHead', 'Admin', 'Staff'], section: 'communications' },
     { path: '/communications', label: 'Communications', icon: 'bi-chat-left-text', roles: ['*'], section: 'communications' },
@@ -152,63 +139,56 @@ const Sidebar = () => {
     { path: '/requisitions', label: 'Requisitions', icon: 'bi-file-earmark-text', roles: ['*'], section: 'communications' },
     { path: '/targets', label: 'Targets', icon: 'bi-bullseye', roles: ['*'], section: 'communications' },
     { path: '/appraisals', label: 'Appraisals', icon: 'bi-star-fill', roles: ['*'], section: 'communications' },
-    
-    // Management Section (Admin)
+
+    // Management Section
     { path: '/notifications', label: 'Send Notifications', icon: 'bi-bell', roles: ['Admin'], section: 'management' },
     { path: '/users', label: 'Users', icon: 'bi-people-fill', roles: ['Admin'], section: 'management' },
     { path: '/departments', label: 'Departments', icon: 'bi-building', roles: ['Admin'], section: 'management' },
-    { path: '/staff', label: 'Staff', icon: 'bi-people', roles: ['Admin', 'samantha@prinstinegroup.org'], section: 'management' },
+    { path: '/staff', label: 'Staff', icon: 'bi-people', roles: ['Admin'], emails: ['samantha@prinstinegroup.org'], section: 'management' },
     { path: '/clients', label: 'Clients', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'], section: 'management' },
     { path: '/partners', label: 'Partners', icon: 'bi-handshake', roles: ['Admin'], section: 'management' },
-    
+
     // Finance Section
     { path: '/finance/petty-cash', label: 'Petty Cash Ledger', icon: 'bi-cash-coin', roles: ['Admin', 'DepartmentHead', 'Staff'], requiresFinanceAccess: true, section: 'finance' },
     { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box-seam', roles: ['Admin', 'DepartmentHead', 'Staff'], requiresFinanceAccess: true, section: 'finance' },
-    
+
     // Academy Section
     { path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student', 'DepartmentHead', 'Staff'], section: 'academy' },
     { path: '/certificates', label: 'Certificates', icon: 'bi-award', roles: ['Admin'], section: 'academy' },
-    
+
     // Profile Section
     { path: '/profile', label: 'Profile', icon: 'bi-person-circle', roles: ['Admin', 'Staff', 'Instructor', 'Student', 'Client', 'Partner', 'DepartmentHead'], section: 'profile' }
   ];
 
-  // add samantha@prinstinegroup.org to the roles array to manage staff by adding, editing, updating, deleting, viewing, approving, and rejecting staff
-  if (user?.email === 'samantha@prinstinegroup.org') {
-    menuItems.push({ path: '/staff', label: 'Staff', icon: 'bi-people', roles: ['Admin', 'samantha@prinstinegroup.org'], section: 'management' });
-  }
-  // Filter menu items based on role and special conditions
+  // Filter menu items based on role, email, and special conditions
   const filteredMenuItems = menuItems.filter(item => {
-    // Check if item is accessible by role
-    if (!(item.roles.includes('*') || item.roles.includes(user?.role))) {
-      return false;
-    }
-    
-    // Finance routes (Petty Cash and Asset Registry) - only for Admin, Finance Department Head, or Assistant Finance Officer
+    const userEmail = user?.email?.toLowerCase();
+
+    // Role OR email match OR wildcard '*'
+    const allowed =
+      item.roles.includes('*') ||
+      item.roles.includes(user?.role) ||
+      (item.emails && item.emails.map(e => e.toLowerCase()).includes(userEmail));
+
+    if (!allowed) return false;
+
+    // Finance routes
     if (item.requiresFinanceAccess) {
-      if (user?.role === 'Admin') {
-        return true; // Admin always has access
-      }
-      return hasFinanceAccess; // For others, check if they have finance access
+      if (user?.role === 'Admin') return true;
+      return hasFinanceAccess;
     }
-    
-    // Hide Academy section for Finance, Client Engagement, Audit, and ICT/IT Department Heads (but allow for Staff with academy access)
+
+    // Academy rules
     if (item.path === '/academy' && user?.role === 'DepartmentHead') {
-      // Check if user is Finance, Client Engagement, Audit, or ICT/IT Department Head (by email)
       const excludedEmails = ['jtokpa@prinstinegroup.org', 'cmoore@prinstinegroup.org', 'wbuku@prinstinegroup.org', 'eksackie@prinstinegroup.org'];
-      if (excludedEmails.includes(user?.email?.toLowerCase())) {
-        return false;
-      }
+      if (excludedEmails.includes(userEmail)) return false;
     }
-    
-    // Show Academy for Staff with academy access (cvulue@prinstinegroup.org)
+
     if (item.path === '/academy' && user?.role === 'Staff') {
-      const academyStaffEmails = ['cvulue@prinstinegroup.org'];
-      if (!academyStaffEmails.includes(user?.email?.toLowerCase())) {
-        return false;
-      }
+      const academyStaffEmails = ['cvulue@prinstinegroup.org', 'samsonbryant89@gmail.com'];
+      if (!academyStaffEmails.includes(userEmail)) return false;
     }
-    
+
     return true;
   });
 
@@ -237,7 +217,6 @@ const Sidebar = () => {
       <nav className="sidebar-nav">
         <ul className="sidebar-menu">
           {(() => {
-            // Group items by section for better organization
             const sections = {
               dashboards: { label: 'Dashboards', items: [] },
               reports: { label: 'Reports', items: [] },
@@ -251,19 +230,15 @@ const Sidebar = () => {
 
             filteredMenuItems.forEach(item => {
               const section = item.section || 'other';
-              if (sections[section]) {
-                sections[section].items.push(item);
-              } else {
-                sections.other.items.push(item);
-              }
+              if (sections[section]) sections[section].items.push(item);
+              else sections.other.items.push(item);
             });
 
-            // Render sections with headers (only for DepartmentHead and Admin)
             const shouldShowSections = user?.role === 'DepartmentHead' || user?.role === 'Admin';
-            
+
             return Object.entries(sections).map(([sectionKey, section]) => {
               if (section.items.length === 0) return null;
-              
+
               return (
                 <React.Fragment key={sectionKey}>
                   {shouldShowSections && section.label && !collapsed && (
@@ -271,13 +246,12 @@ const Sidebar = () => {
                       <span className="sidebar-section-label">{section.label}</span>
                     </li>
                   )}
-                  {section.items.map((item) => {
-                    // Show unread count badge for Notifications link
-                    const showBadge = item.path === '/notifications-view' && 
-                      ((user?.role === 'DepartmentHead' && unreadFromAdmin > 0) || 
-                       (user?.role !== 'DepartmentHead' && unreadCount > 0));
-                    const badgeCount = item.path === '/notifications-view' && user?.role === 'DepartmentHead' 
-                      ? unreadFromAdmin 
+                  {section.items.map(item => {
+                    const showBadge = item.path === '/notifications-view' &&
+                      ((user?.role === 'DepartmentHead' && unreadFromAdmin > 0) ||
+                      (user?.role !== 'DepartmentHead' && unreadCount > 0));
+                    const badgeCount = item.path === '/notifications-view' && user?.role === 'DepartmentHead'
+                      ? unreadFromAdmin
                       : unreadCount;
 
                     return (
@@ -291,18 +265,10 @@ const Sidebar = () => {
                           {!collapsed && (
                             <>
                               <span>{item.label}</span>
-                              {showBadge && (
-                                <span className="badge bg-danger rounded-pill ms-auto">
-                                  {badgeCount}
-                                </span>
-                              )}
+                              {showBadge && <span className="badge bg-danger rounded-pill ms-auto">{badgeCount}</span>}
                             </>
                           )}
-                          {collapsed && showBadge && (
-                            <span className="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">
-                              {badgeCount}
-                            </span>
-                          )}
+                          {collapsed && showBadge && <span className="badge bg-danger rounded-pill position-absolute top-0 start-100 translate-middle">{badgeCount}</span>}
                         </Link>
                       </li>
                     );
@@ -336,4 +302,3 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
-

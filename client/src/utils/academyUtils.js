@@ -18,7 +18,7 @@ export const isAcademyStaff = (user) => {
   
   // Explicit email check for Assistant Academy Coordinator (cvulue@prinstinegroup.org)
   const userEmail = (user.email || '').toLowerCase().trim();
-  const academyCoordinatorEmails = ['cvulue@prinstinegroup.org'];
+  const academyCoordinatorEmails = ['cvulue@prinstinegroup.org', 'samsonbryant89@gmail.com'];
   if (academyCoordinatorEmails.includes(userEmail)) {
     console.log(`[isAcademyStaff] User ${userEmail} identified as Assistant Academy Coordinator via email`);
     return true;
