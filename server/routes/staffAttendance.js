@@ -3,7 +3,7 @@
 
 const express = require('express');
 const router = express.Router();
-const db = require('../config/database'); // adjust path if needed
+const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../utils/auth');
 const { startOfDay, endOfDay, formatISO } = require('date-fns');
 
@@ -13,7 +13,7 @@ const getTodayDate = () => formatISO(new Date(), { representation: 'date' });
 // ============================
 // GET: User attendance history
 // ============================
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const rows = await db.all(
@@ -31,7 +31,7 @@ router.get('/', requireAuth, async (req, res) => {
 // ============================
 // GET: Today status
 // ============================
-router.get('/today/status', requireAuth, async (req, res) => {
+router.get('/today/status', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const today = getTodayDate();
@@ -55,7 +55,7 @@ router.get('/today/status', requireAuth, async (req, res) => {
 // ============================
 // POST: Sign In
 // ============================
-router.post('/sign-in', requireAuth, async (req, res) => {
+router.post('/sign-in', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const userName = req.user.name;
@@ -94,7 +94,7 @@ router.post('/sign-in', requireAuth, async (req, res) => {
 // ============================
 // POST: Sign Out
 // ============================
-router.post('/sign-out', requireAuth, async (req, res) => {
+router.post('/sign-out', authenticateToken, async (req, res) => {
   try {
     const userId = req.user.id;
     const today = getTodayDate();
@@ -135,7 +135,7 @@ router.post('/sign-out', requireAuth, async (req, res) => {
 // ============================
 // PUT: Approve / Reject Attendance
 // ============================
-router.put('/:id/approve', requireAuth, requireRole('Admin'), async (req, res) => {
+router.put('/:id/approve', authenticateToken, requireRole('Admin'), async (req, res) => {
   try {
     const { status, admin_notes } = req.body;
 
@@ -159,7 +159,7 @@ router.put('/:id/approve', requireAuth, requireRole('Admin'), async (req, res) =
 // ============================
 // GET: Admin View (Weekly / Date / Month)
 // ============================
-router.get('/admin/view', requireAuth, requireRole('Admin'), async (req, res) => {
+router.get('/admin/view', authenticateToken, requireRole('Admin'), async (req, res) => {
   try {
     const { user_id, week_start, date, month, year } = req.query;
     const params = [];
@@ -230,7 +230,7 @@ router.get('/admin/view', requireAuth, requireRole('Admin'), async (req, res) =>
 // ============================
 // GET: Calendar View
 // ============================
-router.get('/calendar', requireAuth, async (req, res) => {
+router.get('/calendar', authenticateToken, async (req, res) => {
   try {
     const { month, year } = req.query;
     const start = `${year}-${String(month).padStart(2, '0')}-01`;
