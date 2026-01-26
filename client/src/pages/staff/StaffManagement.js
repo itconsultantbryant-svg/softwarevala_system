@@ -15,17 +15,22 @@ const StaffManagement = () => {
     search: ''
   });
 
+  // Initial fetch
   useEffect(() => {
-    fetchStaff();
     fetchDepartments();
+    fetchStaff();
+  }, []);
+
+  // Fetch staff when filters change
+  useEffect(() => {
+    if (!loading) fetchStaff();
   }, [filters]);
 
   const fetchDepartments = async () => {
     try {
       const response = await api.get('/departments');
-      // Handle different response formats
-      const departments = response.data?.departments || response.data || [];
-      setDepartments(Array.isArray(departments) ? departments : []);
+      const depts = response.data?.departments || [];
+      setDepartments(Array.isArray(depts) ? depts : []);
     } catch (error) {
       console.error('Error fetching departments:', error);
       setDepartments([]);
@@ -41,9 +46,10 @@ const StaffManagement = () => {
       if (filters.search) params.append('search', filters.search);
 
       const response = await api.get(`/staff?${params.toString()}`);
-      // Handle different response formats
-      const staff = response.data?.staff || response.data || [];
-      setStaff(Array.isArray(staff) ? staff : []);
+      console.log('Staff API response:', response.data); // debug log
+
+      const staffList = response.data?.staff || response.data || [];
+      setStaff(Array.isArray(staffList) ? staffList : []);
     } catch (error) {
       console.error('Error fetching staff:', error);
       setStaff([]);
@@ -58,7 +64,7 @@ const StaffManagement = () => {
   };
 
   const handleEdit = (staffMember) => {
-    if (!staffMember || (!staffMember.id && !staffMember.staff_id)) {
+    if (!staffMember || !staffMember.id) {
       alert('Error: Invalid staff member data');
       return;
     }
@@ -67,7 +73,7 @@ const StaffManagement = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!id || id === 'null' || id === null) {
+    if (!id) {
       alert('Error: Invalid staff ID');
       return;
     }
@@ -156,21 +162,11 @@ const StaffManagement = () => {
         </div>
       </div>
 
-      <StaffList
-        staff={staff}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-      />
+      <StaffList staff={staff} onEdit={handleEdit} onDelete={handleDelete} />
 
-      {showForm && (
-        <StaffForm
-          staff={editingStaff}
-          onClose={handleFormClose}
-        />
-      )}
+      {showForm && <StaffForm staff={editingStaff} onClose={handleFormClose} />}
     </div>
   );
 };
 
 export default StaffManagement;
-
