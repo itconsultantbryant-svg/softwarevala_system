@@ -22,7 +22,7 @@ router.get('/', authenticateToken, async (req, res) => {
     const params = [];
     
     // Non-admin users only see their own attendance
-    if (req.user.role !== 'Admin' && req.user.role !== 'HumanResourcesDepartmentHead') {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Admin') {
       query += ' AND sa.user_id = ?';
       params.push(req.user.id);
     }
@@ -59,7 +59,7 @@ router.get('/:id', authenticateToken, requireRole(['Admin',]), async (req, res) 
     const params = [req.params.id];
     
     // Non-admin users can only see their own attendance
-    if (req.user.role !== 'Admin' && req.user.role !== 'HumanResourcesDepartmentHead') {
+    if (req.user.role !== 'Admin' && req.user.role !== '') {
       query += ' AND sa.user_id = ?';
       params.push(req.user.id);
     }
@@ -224,7 +224,7 @@ router.post('/sign-in', authenticateToken, requireRole(['Admin']), async (req, r
 });
 
 // Sign out
-router.post('/sign-out', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), async (req, res) => {
+router.post('/sign-out', authenticateToken, requireRole(['Admin']), async (req, res) => {
   try {
     const { early_reason } = req.body;
     const today = new Date().toISOString().split('T')[0];
@@ -340,7 +340,7 @@ router.put('/:id/approve', authenticateToken, requireRole(['Admin']), async (req
       
     const updated = await db.get('SELECT * FROM staff_attendance WHERE id = ?', [req.params.id]);
     
-    // Notify user (Admin and Human Resources Department Head only)
+    // Notify user (Admin only)
     try {
       await sendNotificationToRole(['Admin'], {
         title: `Attendance ${status}`,
