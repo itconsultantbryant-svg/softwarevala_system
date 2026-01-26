@@ -21,12 +21,6 @@ router.get('/', authenticateToken, async (req, res) => {
     
     const params = [];
     
-    // Non-admin users signin and signout their attendance and see their own attendance
-    if (req.user.role !== 'Admin' && req.user.role !== '') {
-      query += ' AND sa.user_id = ?';
-      params.push(req.user.id);
-    }
-    
     query += ' ORDER BY sa.attendance_date DESC, sa.created_at DESC';
     
     const attendance = await db.all(query, params);
@@ -58,6 +52,11 @@ router.get('/:id', authenticateToken, requireRole(['Admin']), async (req, res) =
     
     const params = [req.params.id];
     
+    // Non-admin users can only see their own attendance
+    if (req.user.role !== 'Admin' && req.user.role !== '') {
+      query += ' AND sa.user_id = ?';
+      params.push(req.user.id);
+    }
     
     query += ' LIMIT 1';
     
@@ -335,7 +334,7 @@ router.put('/:id/approve', authenticateToken, requireRole(['Admin']), async (req
       
     const updated = await db.get('SELECT * FROM staff_attendance WHERE id = ?', [req.params.id]);
     
-    // Notify user (Admin only)
+      // Notify user (Admin only)
     try {
       await sendNotificationToRole(['Admin'], {
         title: `Attendance ${status}`,

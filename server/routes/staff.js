@@ -12,8 +12,8 @@ function generateStaffId() {
   return 'STF-' + Date.now().toString().slice(-8) + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
-// Get all staff (Admin can see all, Staff can see their own)
-router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
+// Get all staff (Admin and Human Resources Department Head can see all, Staff can see their own)
+router.get('/', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), async (req, res) => {
   try {
     const { department, employment_type, search } = req.query;
     let query = `
@@ -38,13 +38,27 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
-    //  can only see staff from their department
-    if (req.user.role === '') {
-      // Get department for this 
-      let dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ?',
-        [req.user.id]
-      );
+    // DepartmentHead can only see staff from their department
+    if (req.user.role === 'HumanResourcesDepartmentHead') {
+      // Check if head_email column exists
+      const deptTableInfo = await db.all("PRAGMA table_info(departments)");
+      const deptColumnNames = deptTableInfo.map(col => col.name);
+      const hasHeadEmail = deptColumnNames.includes('head_email');
+      
+      // Get department for this department head
+      let dept;
+      if (hasHeadEmail) {
+        dept = await db.get(
+          'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
+          [req.user.id, req.user.email.toLowerCase().trim()]
+        );
+      } else {
+        // Fallback to manager_id only if head_email doesn't exist
+        dept = await db.get(
+          'SELECT id, name FROM departments WHERE manager_id = ?',
+          [req.user.id]
+        );
+      }
       
       if (dept) {
         query += ' AND s.department = ?';
@@ -54,7 +68,7 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
       // Staff can only see their own staff record
       query += ' AND s.user_id = ?';
       params.push(req.user.id);
-    } else if (req.user.role !== 'Admin' && req.user.role !== '' && req.user.role !== '' && req.user.role !== 'Staff') {
+    } else if (req.user.role !== 'Admin' && req.user.role !== 'HumanResourcesDepartmentHead' && req.user.role !== 'DepartmentHead' && req.user.role !== 'Staff') {
       // Other roles cannot access
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
@@ -63,12 +77,12 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
 
     const staff = await db.all(query, params);
     
-    // If Admin or , also include  and Admin users who don't have staff records
+    // If Admin or Finance Head, also include Department Heads and Admin users who don't have staff records
     if (req.user.role === 'Admin' || 
-        (req.user.role === '' && 
-         req.user.email && req.user.email.toLowerCase().includes(''))) {
+        (req.user.role === 'HumanResourcesDepartmentHead' && 
+         req.user.email && req.user.email.toLowerCase().includes('human resources'))) {
       try {
-        // Include  who don't have staff records
+        // Include Human Resources Department Heads who don't have staff records
         const deptHeadsQuery = `
           SELECT 
             NULL as id,
@@ -92,13 +106,13 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
             u.is_active
           FROM users u
           LEFT JOIN departments d ON (d.manager_id = u.id OR LOWER(TRIM(d.head_email)) = LOWER(TRIM(u.email)))
-          WHERE u.role = ''
+          WHERE u.role = 'HumanResourcesDepartmentHead'
           AND NOT EXISTS (SELECT 1 FROM staff s WHERE s.user_id = u.id)
         `;
         const deptHeads = await db.all(deptHeadsQuery);
         staff.push(...deptHeads);
         
-        // Also include Admin users who don't have staff records (Admin and  can see all staff)
+        // Also include Admin users who don't have staff records (Admin and Human Resources Department Head can see all staff)
         const adminUsersQuery = `
           SELECT 
             NULL as id,
@@ -112,8 +126,8 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
         const adminUsers = await db.all(adminUsersQuery);
         staff.push(...adminUsers);
       } catch (error) {
-        console.error('Error fetching  and Admin users:', error);
-         // Continue without  and Admin users if there's an error
+        console.error('Error fetching Human Resources Department Heads and Admin users:', error);
+         // Continue without Human Resources Department Heads and Admin users if there's an error
       }
     }
     
@@ -130,7 +144,7 @@ router.get('/', authenticateToken, requireRole(['Admin']), async (req, res) => {
 });
 
 // Get single staff member
-router.get('/:id', authenticateToken, requireRole(['Admin', '']), async (req, res) => {
+router.get('/:id', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), async (req, res) => {
   try {
     const staffId = req.params.id;
 
@@ -147,7 +161,7 @@ router.get('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
     }
 
     // Check permissions - Admin and Human Resources Department Head can see all, Staff can see themselves
-    if (req.user.role !== 'Admin' && req.user.role !== '' && staff.user_id !== req.user.id && (req.user.role !== '' || staff.department !== req.user.department)) {
+    if (req.user.role !== 'Admin' && req.user.role !== 'HumanResourcesDepartmentHead' && staff.user_id !== req.user.id && (req.user.role !== 'DepartmentHead' || staff.department !== req.user.department)) {
       return res.status(403).json({ error: 'You do not have permission to view this staff member information. Only Admin and Human Resources Department Head can view all staff member information, and Department Head can view their own department\'s staff member information.' });
     }
 
@@ -163,8 +177,8 @@ router.get('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
   }
 });
 
-// Create staff member (Admin and  only)
-router.post('/', authenticateToken, requireRole(['Admin', '']), [
+// Create staff member (Admin and Human Resources Department Head only)
+router.post('/', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), [
   body('email').isEmail().normalizeEmail(),
   body('name').trim().notEmpty(),
 ], async (req, res) => {
@@ -190,7 +204,7 @@ router.post('/', authenticateToken, requireRole(['Admin', '']), [
 
     // Password is required when creating staff (admin creates it)
     if (!password) {
-      return res.status(400).json({ error: 'Password is required. Admin or  can create a password for staff login. Please provide a password.' });
+      return res.status(400).json({ error: 'Password is required. Admin or Human Resources Department Head can create a password for staff login. Please provide a password.' });
     }
     const passwordHash = await hashPassword(password); // Hash the password
     
@@ -329,7 +343,7 @@ router.post('/', authenticateToken, requireRole(['Admin', '']), [
 });
 
 // Update staff member information (Admin and Human Resources Department Head only)
-router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, res) => {
+router.put('/:id', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), async (req, res) => {
   try {
     const staffId = req.params.id;
     const updates = req.body;
@@ -337,7 +351,7 @@ router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
     const staff = await db.get('SELECT user_id, id FROM staff WHERE id = ? OR staff_id = ?', [staffId, staffId]);
     if (!staff) {
       return res.status(404).json({ error: 'Staff member information not found' });
-    } else if (staff.user_id !== req.user.id && req.user.role !== 'Admin' && req.user.role !== '') {
+    } else if (staff.user_id !== req.user.id && req.user.role !== 'Admin' && req.user.role !== 'HumanResourcesDepartmentHead') {
       return res.status(403).json({ error: 'Only Admin and Human Resources Department Head can update staff member information' });
     }
 
@@ -382,7 +396,7 @@ router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
       staffColumnNames = staffTableInfo.map(col => col.name);
     }
     
-    // Update staff info - only update fields that exist in the table (Admin and  only)
+    // Update staff info - only update fields that exist in the table (Admin and Human Resources Department Head only)
     const staffUpdates = [];
     const staffParams = [];
     const allowedFields = [
@@ -396,7 +410,7 @@ router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
 
     allowedFields.forEach(field => {
       if (updates[field] !== undefined) {
-        // Check if column exists in table (Admin and  only)
+        // Check if column exists in table (Admin and Human Resources Department Head only)
         let columnExists = false;
         if (field === 'references') {
           // References column is escaped differently in SQLite vs PostgreSQL
@@ -409,13 +423,13 @@ router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
           columnExists = staffColumnNames.includes(field);
         }
         
-        // Skip field if column doesn't exist (Admin and  only)
+        // Skip field if column doesn't exist (Admin and Human Resources Department Head only)
         if (!columnExists) {
           return;
         }
-        // Handle JSON fields (Admin and  only)
+        // Handle JSON fields (Admin and Human Resources Department Head only)
         let value = updates[field];
-        // Escape 'references' as it's a reserved keyword in SQL (Admin and  only)
+        // Escape 'references' as it's a reserved keyword in SQL (Admin and Human Resources Department Head only)
         const fieldName = field === 'references' ? (USE_POSTGRESQL_UPDATE ? '"references"' : '[references]') : field;
         staffUpdates.push(`${fieldName} = ?`);
         staffParams.push(value || null);
@@ -423,7 +437,7 @@ router.put('/:id', authenticateToken, requireRole(['Admin', '']), async (req, re
     });
 
     if (staffUpdates.length > 0) {
-      // Use the actual staff.id from the database, not the param (in case staff_id was used) (Admin and  only)
+      // Use the actual staff.id from the database, not the param (in case staff_id was used) (Admin and Human Resources Department Head only)
       const actualStaffId = staff.id || staffId;
       staffParams.push(actualStaffId);
       await db.run(`UPDATE staff SET ${staffUpdates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, staffParams);
@@ -536,7 +550,7 @@ router.get('/:id/leaves', authenticateToken, async (req, res) => {
 });
 
 // Create leave request
-router.post('/:id/leaves', authenticateToken, requireRole(['Admin']), [
+router.post('/:id/leaves', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), [
   body('leave_type').isIn(['Sick', 'Vacation', 'Personal', 'Emergency', 'Other']),
   body('start_date').isISO8601(),
   body('end_date').isISO8601(),
@@ -566,8 +580,8 @@ router.post('/:id/leaves', authenticateToken, requireRole(['Admin']), [
   }
 });
 
-// Approve/reject leave request (Admin only)
-router.put('/leaves/:leaveId', authenticateToken, requireRole(['Admin']), [
+// Approve/reject leave request (Admin and Human Resource Department Head only)
+router.put('/leaves/:leaveId', authenticateToken, requireRole(['Admin', 'HumanResourcesDepartmentHead']), [
   body('status').isIn(['Approved', 'Rejected'])
 ], async (req, res) => {
   try {
