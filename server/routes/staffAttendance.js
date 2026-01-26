@@ -1,240 +1,252 @@
+// server/routes/staffAttendance.js
+// Centralized Staff Attendance Routes (Fixed Date Handling, Approval, Export, Calendar)
+
 const express = require('express');
 const router = express.Router();
-const db = require('../config/database');
-const { authenticateToken, requireRole } = require('../utils/auth');
-const { sendNotificationToRole } = require('../utils/notifications');
+const db = require('../config/db'); // adjust path if needed
+const { requireAuth, requireRole } = require('../middleware/auth');
+const { startOfDay, endOfDay, formatISO } = require('date-fns');
 
-/* ============================
-   GET ATTENDANCE (WITH TODAY FLAG)
-============================ */
-router.get('/', authenticateToken, async (req, res) => {
+// Helper: get today date (YYYY-MM-DD) in server local time
+const getTodayDate = () => formatISO(new Date(), { representation: 'date' });
+
+// ============================
+// GET: User attendance history
+// ============================
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-
-    let query = `
-      SELECT 
-        sa.*,
-        u.name AS user_name,
-        u.email AS user_email,
-        approver.name AS approver_name,
-        CASE 
-          WHEN sa.attendance_date = ? THEN 1 
-          ELSE 0 
-        END AS is_today
-      FROM staff_attendance sa
-      LEFT JOIN users u ON sa.user_id = u.id
-      LEFT JOIN users approver ON sa.approved_by = approver.id
-      WHERE 1=1
-    `;
-
-    const params = [today];
-
-    if (req.user.role !== 'Admin') {
-      query += ' AND sa.user_id = ?';
-      params.push(req.user.id);
-    }
-
-    query += ' ORDER BY sa.attendance_date DESC, sa.created_at DESC';
-
-    const attendance = await db.all(query, params);
-
-    const todayRecord = attendance.find(a => a.is_today === 1) || null;
-
-    res.json({
-      attendance,
-      todayAttendance: todayRecord,
-      canSignIn: !todayRecord || !todayRecord.sign_in_time,
-      canSignOut:
-        todayRecord &&
-        todayRecord.sign_in_time &&
-        !todayRecord.sign_out_time
-    });
-  } catch (error) {
-    console.error('Get attendance error:', error);
+    const userId = req.user.id;
+    const rows = await db.all(
+      `SELECT * FROM staff_attendance
+       WHERE user_id = ?
+       ORDER BY attendance_date DESC`,
+      [userId]
+    );
+    res.json({ attendance: rows });
+  } catch (err) {
     res.status(500).json({ error: 'Failed to fetch attendance' });
   }
 });
 
-/* ============================
-   SIGN IN (STAFF ONLY)
-============================ */
-router.post(
-  '/sign-in',
-  authenticateToken,
-  requireRole(['Staff']),
-  async (req, res) => {
-    try {
-      const { late_reason } = req.body;
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date();
-      const nowISO = now.toISOString();
+// ============================
+// GET: Today status
+// ============================
+router.get('/today/status', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const today = getTodayDate();
 
-      const existing = await db.get(
-        'SELECT * FROM staff_attendance WHERE user_id = ? AND attendance_date = ?',
-        [req.user.id, today]
-      );
-
-      if (existing?.sign_in_time) {
-        return res.status(400).json({ error: 'Already signed in today' });
-      }
-
-      const standardStartTime = new Date(now);
-      standardStartTime.setHours(9, 0, 0, 0);
-
-      const isLate = now > standardStartTime;
-
-      if (isLate && !late_reason) {
-        return res.status(400).json({ error: 'Late reason required' });
-      }
-
-      if (existing) {
-        await db.run(
-          `
-          UPDATE staff_attendance SET
-            sign_in_time = ?,
-            sign_in_late = ?,
-            sign_in_late_reason = ?,
-            status = 'Pending',
-            updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `,
-          [nowISO, isLate ? 1 : 0, late_reason || null, existing.id]
-        );
-      } else {
-        await db.run(
-          `
-          INSERT INTO staff_attendance (
-            user_id, attendance_date, sign_in_time,
-            sign_in_late, sign_in_late_reason, status
-          ) VALUES (?, ?, ?, ?, ?, 'Pending')
-        `,
-          [req.user.id, today, nowISO, isLate ? 1 : 0, late_reason || null]
-        );
-      }
-
-      await sendNotificationToRole('Admin', {
-        title: 'Staff Sign-In',
-        message: `${req.user.name} signed in${isLate ? ' (Late)' : ''}`,
-        link: '/attendance',
-        type: isLate ? 'warning' : 'info',
-        senderId: req.user.id
-      });
-
-      res.json({ message: 'Signed in successfully' });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-);
-
-/* ============================
-   SIGN OUT (STAFF ONLY)
-============================ */
-router.post(
-  '/sign-out',
-  authenticateToken,
-  requireRole(['Staff']),
-  async (req, res) => {
-    try {
-      const { early_reason } = req.body;
-      const today = new Date().toISOString().split('T')[0];
-      const now = new Date();
-      const nowISO = now.toISOString();
-
-      const attendance = await db.get(
-        'SELECT * FROM staff_attendance WHERE user_id = ? AND attendance_date = ?',
-        [req.user.id, today]
-      );
-
-      if (!attendance?.sign_in_time) {
-        return res.status(400).json({ error: 'Sign in first' });
-      }
-
-      if (attendance.sign_out_time) {
-        return res.status(400).json({ error: 'Already signed out' });
-      }
-
-      const standardEndTime = new Date(now);
-      standardEndTime.setHours(17, 0, 0, 0);
-
-      const isEarly = now < standardEndTime;
-
-      if (isEarly && !early_reason) {
-        return res.status(400).json({ error: 'Early reason required' });
-      }
-
-      await db.run(
-        `
-        UPDATE staff_attendance SET
-          sign_out_time = ?,
-          sign_out_early = ?,
-          sign_out_early_reason = ?,
-          status = 'Pending',
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `,
-        [nowISO, isEarly ? 1 : 0, early_reason || null, attendance.id]
-      );
-
-      await sendNotificationToRole('Admin', {
-        title: 'Staff Sign-Out',
-        message: `${req.user.name} signed out${isEarly ? ' early' : ''}`,
-        link: '/attendance',
-        type: isEarly ? 'warning' : 'info',
-        senderId: req.user.id
-      });
-
-      res.json({ message: 'Signed out successfully' });
-    } catch (error) {
-      res.status(500).json({ error: error.message });
-    }
-  }
-);
-
-/* ============================
-   TODAY STATUS (UNCHANGED, CORRECT)
-============================ */
-router.get(
-  '/today/status',
-  authenticateToken,
-  requireRole(['Staff', 'Admin']),
-  async (req, res) => {
-    const today = new Date().toISOString().split('T')[0];
     const attendance = await db.get(
-      'SELECT * FROM staff_attendance WHERE user_id = ? AND attendance_date = ?',
-      [req.user.id, today]
+      `SELECT * FROM staff_attendance
+       WHERE user_id = ? AND attendance_date = ?`,
+      [userId, today]
     );
 
     res.json({
-      attendance: attendance || null,
+      attendance,
       canSignIn: !attendance || !attendance.sign_in_time,
       canSignOut: attendance && attendance.sign_in_time && !attendance.sign_out_time
     });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch today status' });
   }
-);
+});
 
-/* ============================
-   APPROVE / REJECT (ADMIN)
-============================ */
-router.put('/:id/approve', authenticateToken, requireRole(['Admin']), async (req, res) => {
-  const { status } = req.body;
+// ============================
+// POST: Sign In
+// ============================
+router.post('/sign-in', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userName = req.user.name;
+    const today = getTodayDate();
+    const now = new Date();
 
-  if (!['Approved', 'Rejected'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status' });
+    const standardStart = new Date();
+    standardStart.setHours(9, 0, 0, 0);
+    const isLate = now > standardStart;
+
+    const existing = await db.get(
+      `SELECT * FROM staff_attendance WHERE user_id = ? AND attendance_date = ?`,
+      [userId, today]
+    );
+
+    if (existing && existing.sign_in_time) {
+      return res.status(400).json({ error: 'Already signed in today' });
+    }
+
+    await db.run(
+      `INSERT OR REPLACE INTO staff_attendance
+       (id, user_id, user_name, attendance_date, sign_in_time, sign_in_late, sign_in_late_reason, status)
+       VALUES (
+         COALESCE((SELECT id FROM staff_attendance WHERE user_id = ? AND attendance_date = ?), NULL),
+         ?, ?, ?, ?, ?, ?, 'Pending'
+       )`,
+      [userId, today, userId, userName, today, now.toISOString(), isLate ? 1 : 0, isLate ? req.body.late_reason : null]
+    );
+
+    res.json({ message: 'Signed in successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to sign in' });
   }
+});
 
-  await db.run(
-    `
-    UPDATE staff_attendance SET
-      status = ?,
-      approved_by = ?,
-      approved_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `,
-    [status, req.user.id, req.params.id]
-  );
+// ============================
+// POST: Sign Out
+// ============================
+router.post('/sign-out', requireAuth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const today = getTodayDate();
+    const now = new Date();
 
-  res.json({ message: `Attendance ${status}` });
+    const standardEnd = new Date();
+    standardEnd.setHours(17, 0, 0, 0);
+    const isEarly = now < standardEnd;
+
+    const attendance = await db.get(
+      `SELECT * FROM staff_attendance WHERE user_id = ? AND attendance_date = ?`,
+      [userId, today]
+    );
+
+    if (!attendance || !attendance.sign_in_time) {
+      return res.status(400).json({ error: 'You must sign in first' });
+    }
+    if (attendance.sign_out_time) {
+      return res.status(400).json({ error: 'Already signed out today' });
+    }
+
+    await db.run(
+      `UPDATE staff_attendance
+       SET sign_out_time = ?,
+           sign_out_early = ?,
+           sign_out_early_reason = ?,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [now.toISOString(), isEarly ? 1 : 0, isEarly ? req.body.early_reason : null, attendance.id]
+    );
+
+    res.json({ message: 'Signed out successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to sign out' });
+  }
+});
+
+// ============================
+// PUT: Approve / Reject Attendance
+// ============================
+router.put('/:id/approve', requireAuth, requireRole('Admin'), async (req, res) => {
+  try {
+    const { status, admin_notes } = req.body;
+
+    if (!['Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+
+    await db.run(
+      `UPDATE staff_attendance
+       SET status = ?, approved_by = ?, approved_at = CURRENT_TIMESTAMP, admin_notes = ?
+       WHERE id = ?`,
+      [status, req.user.id, admin_notes || null, req.params.id]
+    );
+
+    res.json({ message: `Attendance ${status.toLowerCase()}` });
+  } catch (err) {
+    res.status(500).json({ error: 'Approval failed' });
+  }
+});
+
+// ============================
+// GET: Admin View (Weekly / Date / Month)
+// ============================
+router.get('/admin/view', requireAuth, requireRole('Admin'), async (req, res) => {
+  try {
+    const { user_id, week_start, date, month, year } = req.query;
+    const params = [];
+    let where = '1=1';
+
+    if (user_id) {
+      where += ' AND sa.user_id = ?';
+      params.push(user_id);
+    }
+
+    if (date) {
+      where += ' AND sa.attendance_date = ?';
+      params.push(date);
+    }
+
+    if (week_start) {
+      const ws = new Date(week_start);
+      const we = new Date(ws);
+      we.setDate(ws.getDate() + 6);
+      where += ' AND sa.attendance_date BETWEEN ? AND ?';
+      params.push(formatISO(ws, { representation: 'date' }));
+      params.push(formatISO(we, { representation: 'date' }));
+    }
+
+    if (month && year) {
+      const start = `${year}-${String(month).padStart(2, '0')}-01`;
+      const end = new Date(year, month, 0).toISOString().split('T')[0];
+      where += ' AND sa.attendance_date BETWEEN ? AND ?';
+      params.push(start, end);
+    }
+
+    const rows = await db.all(
+      `SELECT sa.*, u.email AS user_email
+       FROM staff_attendance sa
+       JOIN users u ON u.id = sa.user_id
+       WHERE ${where}
+       ORDER BY sa.user_id, sa.attendance_date`,
+      params
+    );
+
+    // Group by user → week
+    const grouped = {};
+    rows.forEach(r => {
+      if (!grouped[r.user_id]) {
+        grouped[r.user_id] = {
+          user_id: r.user_id,
+          user_name: r.user_name,
+          user_email: r.user_email,
+          weeks: {}
+        };
+      }
+      const d = new Date(r.attendance_date);
+      d.setDate(d.getDate() - d.getDay());
+      const weekKey = d.toISOString().split('T')[0];
+
+      if (!grouped[r.user_id].weeks[weekKey]) {
+        grouped[r.user_id].weeks[weekKey] = { records: [] };
+      }
+      grouped[r.user_id].weeks[weekKey].records.push(r);
+    });
+
+    res.json({ attendance_by_user: Object.values(grouped) });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load admin view' });
+  }
+});
+
+// ============================
+// GET: Calendar View
+// ============================
+router.get('/calendar', requireAuth, async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    const start = `${year}-${String(month).padStart(2, '0')}-01`;
+    const end = new Date(year, month, 0).toISOString().split('T')[0];
+
+    const rows = await db.all(
+      `SELECT attendance_date, status, sign_in_late, sign_out_early
+       FROM staff_attendance
+       WHERE user_id = ? AND attendance_date BETWEEN ? AND ?`,
+      [req.user.id, start, end]
+    );
+
+    res.json({ records: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to load calendar' });
+  }
 });
 
 module.exports = router;

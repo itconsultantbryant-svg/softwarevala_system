@@ -28,4 +28,3 @@ CREATE INDEX IF NOT EXISTS idx_staff_attendance_user_id ON staff_attendance(user
 CREATE INDEX IF NOT EXISTS idx_staff_attendance_date ON staff_attendance(attendance_date);
 CREATE INDEX IF NOT EXISTS idx_staff_attendance_status ON staff_attendance(status);
 CREATE INDEX IF NOT EXISTS idx_staff_attendance_approved_by ON staff_attendance(approved_by);
-
