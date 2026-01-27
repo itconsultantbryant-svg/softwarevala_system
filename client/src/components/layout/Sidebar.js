@@ -79,7 +79,7 @@ const Sidebar = () => {
     if (user.role === 'Admin') return setHasFinanceAccess(true);
 
     try {
-      if (user.role === 'DepartmentHead') {
+      if (user.role === 'DepartmentHead' || user.role === ' Assistant Finance Officer' || user.role === 'Admin') {
         const res = await api.get('/departments');
         const finance = res.data.departments.find(d =>
           (d.manager_id === user.id ||
@@ -162,7 +162,7 @@ const Sidebar = () => {
     { path: '/academy', label: 'Academy Management', icon: 'bi-mortarboard', roles: ['Admin'], academy: true },
     { path: '/academy', label: 'Academy Management', icon: 'bi-mortarboard', roles: ['Staff', 'DepartmentHead'], academy: true },
 
-    { path: '/finance', label: 'Finance', icon: 'bi-cash-stack', roles: ['Admin'], finance: true },
+    { path: '/finance', label: 'Finance', icon: 'bi-cash-stack', roles: ['Admin', 'Assistant Finance Officer'], finance: true },
 
     { path: '/communications', label: 'Communications', icon: 'bi-chat', roles: ['*'] },
     { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3', roles: ['*'] },
