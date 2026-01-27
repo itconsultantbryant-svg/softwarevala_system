@@ -49,6 +49,10 @@ import RequisitionHistory from './pages/requisitions/RequisitionHistory';
 import Targets from './pages/targets/Targets';
 import PettyCash from './pages/finance/PettyCash';
 import Appraisals from './pages/appraisals/Appraisals';
+import StudentPaymentManagement from './pages/departments/StudentPaymentManagement';
+import StudentPortal from './pages/academy/StudentPotal';
+import StudentCertificates from './pages/academy/StudentCertificates';
+import StudentCourses from './pages/academy/StudentCourses';
 import NotFound from './pages/NotFound';
 import './App.css';
 
@@ -112,6 +116,12 @@ function App() {
                           <Route path="/requisitions" element={<PrivateRoute><RequisitionHistory /></PrivateRoute>} />
                           <Route path="/targets" element={<PrivateRoute><Targets /></PrivateRoute>} />
                           <Route path="/profile" element={<Profile />} />
+                          <Route path="/student" element={<StudentPortal />} />
+                          <Route path="/student/courses" element={<StudentCourses />} />
+                          <Route path="/student/grades" element={<StudentGrades />} />
+                          <Route path="/student/certificates" element={<StudentCertificates />} />
+                          <Route path="/student/billing" element={<StudentBilling />} />
+                          <Route path="student-payments" element={<StudentPaymentManagement />} />
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </div>
