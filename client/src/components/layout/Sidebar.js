@@ -73,38 +73,45 @@ const Sidebar = () => {
   };
 
   /* =========================
-     FINANCE ACCESS CHECK
-  ========================= */
+   FINANCE ACCESS CHECK - Updated
+========================= */
 
-  const checkFinanceAccess = async () => {
-    if (!user) return setHasFinanceAccess(false);
+const checkFinanceAccess = async () => {
+  if (!user) return setHasFinanceAccess(false);
 
-    const userRole = normalizeRole(user.role);
+  const userRole = normalizeRole(user.role);
+  const userEmail = user.email?.toLowerCase().trim();
 
-    if (userRole === 'admin') return setHasFinanceAccess(true);
+  // Emails that should always have finance access
+  const financeEmails = ['sean@prinstinegroup.org'];
 
-    try {
-      if (['departmenthead', 'assistant finance officer'].includes(userRole)) {
-        const res = await api.get('/departments');
-        const finance = res.data.departments.find(d =>
-          (d.manager_id === user.id ||
-            d.head_email?.toLowerCase().trim() === user.email.toLowerCase().trim()) &&
-          d.name?.toLowerCase().includes('finance')
-        );
-        return setHasFinanceAccess(!!finance);
-      }
+  if (userRole === 'admin' || financeEmails.includes(userEmail)) {
+    return setHasFinanceAccess(true);
+  }
 
-      if (userRole === 'staff') {
-        const res = await api.get('/staff');
-        const me = res.data.staff.find(s => s.user_id === user.id);
-        return setHasFinanceAccess(!!me?.department?.toLowerCase().includes('finance'));
-      }
-    } catch (err) {
-      console.error('Finance access check failed:', err);
+  try {
+    if (['departmenthead', 'assistant finance officer'].includes(userRole)) {
+      const res = await api.get('/departments');
+      const finance = res.data.departments.find(d =>
+        (d.manager_id === user.id ||
+          d.head_email?.toLowerCase().trim() === userEmail) &&
+        d.name?.toLowerCase().includes('finance')
+      );
+      return setHasFinanceAccess(!!finance);
     }
 
-    setHasFinanceAccess(false);
-  };
+    if (userRole === 'staff') {
+      const res = await api.get('/staff');
+      const me = res.data.staff.find(s => s.user_id === user.id);
+      return setHasFinanceAccess(!!me?.department?.toLowerCase().includes('finance'));
+    }
+  } catch (err) {
+    console.error('Finance access check failed:', err);
+  }
+
+  setHasFinanceAccess(false);
+};
+
 
   /* =========================
      NOTIFICATIONS

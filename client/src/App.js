@@ -53,6 +53,8 @@ import StudentPaymentManagement from './pages/departments/StudentPaymentManageme
 import StudentPortal from './pages/academy/StudentPotal';
 import StudentCertificates from './pages/academy/StudentCertificates';
 import StudentCourses from './pages/academy/StudentCourses';
+import StudentBilling from './pages/academy/StudentBilling';
+import StudentGrades from './pages/academy/StudentGrades';
 import NotFound from './pages/NotFound';
 import './App.css';
 
