@@ -206,8 +206,8 @@ class PostgreSQLDatabase {
     try {
       const pgSql = this.convertSQLiteToPostgres(sql, params);
       
-      // Log the converted SQL for debugging (first 300 chars)
-      if (sql.toUpperCase().includes('CREATE TABLE') || sql.toUpperCase().includes('INSERT')) {
+      // Log converted SQL only when DEBUG_SQL=1 (avoid log spam in production)
+      if (process.env.DEBUG_SQL === '1' && (sql.toUpperCase().includes('CREATE TABLE') || sql.toUpperCase().includes('INSERT'))) {
         console.log('📝 Original SQL (first 150):', sql.substring(0, 150));
         console.log('📝 Converted SQL (first 150):', pgSql.substring(0, 150));
       }
@@ -228,9 +228,11 @@ class PostgreSQLDatabase {
       };
     } catch (err) {
       console.error('❌ Database run() error:', err.message);
-      console.error('📝 Original SQL (first 200):', sql.substring(0, 200));
-      console.error('📝 Converted SQL (first 200):', this.convertSQLiteToPostgres(sql, params).substring(0, 200));
-      console.error('📝 Params:', params);
+      if (process.env.DEBUG_SQL === '1') {
+        console.error('📝 Original SQL (first 200):', sql.substring(0, 200));
+        console.error('📝 Converted SQL (first 200):', this.convertSQLiteToPostgres(sql, params).substring(0, 200));
+        console.error('📝 Params:', params);
+      }
       throw err;
     }
   }
