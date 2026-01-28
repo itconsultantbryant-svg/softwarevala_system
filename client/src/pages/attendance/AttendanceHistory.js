@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { exportToPDF, exportToExcel } from '../../utils/exportUtils';
@@ -9,7 +9,7 @@ import jsPDF from 'jspdf';
 const AttendanceHistory = () => {
   const { user } = useAuth();
   const [attendance, setAttendance] = useState([]);
-  const [adminView, setAdminView] = useState(null); // For admin weekly view
+  const [adminView, setAdminView] = useState(null); // For admin view (week/month/year/date)
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [todayStatus, setTodayStatus] = useState(null);
@@ -33,11 +33,79 @@ const AttendanceHistory = () => {
     week_start: getDefaultWeekStart(),
     date: '',
     month: '',
-    year: new Date().getFullYear()
+    year: new Date().getFullYear(),
+    viewType: 'week' // 'week', 'month', 'year', 'date'
   });
   const [approvingId, setApprovingId] = useState(null);
   const [approvalNotes, setApprovalNotes] = useState('');
   const [viewMode, setViewMode] = useState('admin'); // Admin defaults to admin view to see staff/dept head attendance
+
+  const fetchAttendance = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/attendance');
+      setAttendance(response.data.attendance || []);
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    try {
+      // Fetch both Staff and DepartmentHead users for attendance
+      const response = await api.get('/users');
+      const allUsers = response.data.users || [];
+      // Filter to only include Staff and DepartmentHead roles
+      const filteredUsers = allUsers.filter(u =>
+        u.role === 'Staff' || u.role === 'DepartmentHead'
+      );
+      setUsers(filteredUsers);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  }, []);
+
+  const fetchAdminView = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (adminFilter.user_id) params.append('user_id', adminFilter.user_id);
+
+      // Only send the relevant filter for the selected viewType
+      if (adminFilter.viewType === 'week' && adminFilter.week_start) {
+        params.append('week_start', adminFilter.week_start);
+      } else if (adminFilter.viewType === 'date' && adminFilter.date) {
+        params.append('date', adminFilter.date);
+      } else if (adminFilter.viewType === 'month' && adminFilter.month && adminFilter.year) {
+        params.append('month', adminFilter.month);
+        params.append('year', adminFilter.year);
+      } else if (adminFilter.viewType === 'year' && adminFilter.year) {
+        params.append('year', adminFilter.year);
+      }
+
+      const response = await api.get(`/attendance/admin/view?${params.toString()}`);
+      setAdminView(response.data);
+      // Use users from admin view response (includes both Staff and DepartmentHead)
+      if (response.data.users) {
+        setUsers(response.data.users || []);
+      }
+    } catch (error) {
+      console.error('Error fetching admin view:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [adminFilter]);
+
+  const fetchTodayStatus = useCallback(async () => {
+    try {
+      const response = await api.get('/attendance/today/status');
+      setTodayStatus(response.data);
+    } catch (error) {
+      console.error('Error fetching today status:', error);
+    }
+  }, []);
 
   useEffect(() => {
     if (user?.role === 'Admin') {
@@ -53,7 +121,7 @@ const AttendanceHistory = () => {
       fetchTodayStatus();
     }, 60000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, fetchAdminView, fetchUsers, fetchAttendance, fetchTodayStatus]);
 
   // Real-time updates via socket.io
   useEffect(() => {
@@ -136,64 +204,7 @@ const AttendanceHistory = () => {
     }
   }, [user, viewMode]);
 
-  const fetchAttendance = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/attendance');
-      setAttendance(response.data.attendance || []);
-    } catch (error) {
-      console.error('Error fetching attendance:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAdminView = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (adminFilter.user_id) params.append('user_id', adminFilter.user_id);
-      if (adminFilter.week_start) params.append('week_start', adminFilter.week_start);
-      if (adminFilter.date) params.append('date', adminFilter.date);
-      if (adminFilter.month) params.append('month', adminFilter.month);
-      if (adminFilter.year) params.append('year', adminFilter.year);
-
-      const response = await api.get(`/attendance/admin/view?${params.toString()}`);
-      setAdminView(response.data);
-      // Use users from admin view response (includes both Staff and DepartmentHead)
-      if (response.data.users) {
-        setUsers(response.data.users || []);
-      }
-    } catch (error) {
-      console.error('Error fetching admin view:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchUsers = async () => {
-    try {
-      // Fetch both Staff and DepartmentHead users for attendance
-      const response = await api.get('/users');
-      const allUsers = response.data.users || [];
-      // Filter to only include Staff and DepartmentHead roles
-      const filteredUsers = allUsers.filter(u => 
-        u.role === 'Staff' || u.role === 'DepartmentHead'
-      );
-      setUsers(filteredUsers);
-    } catch (error) {
-      console.error('Error fetching users:', error);
-    }
-  };
-
-  const fetchTodayStatus = async () => {
-    try {
-      const response = await api.get('/attendance/today/status');
-      setTodayStatus(response.data);
-    } catch (error) {
-      console.error('Error fetching today status:', error);
-    }
-  };
+  // (fetch* functions moved above into useCallback for stable deps)
 
   const handleSignIn = async () => {
     try {
@@ -450,7 +461,15 @@ const AttendanceHistory = () => {
     if (user?.role === 'Admin' && viewMode === 'admin') {
       fetchAdminView();
     }
-  }, [adminFilter, viewMode]);
+  }, [adminFilter, viewMode, fetchAdminView, user?.role]);
+
+  const adminStats = useMemo(() => {
+    const rows = adminView?.attendance || [];
+    const pending = rows.filter(r => r.status === 'Pending').length;
+    const approved = rows.filter(r => r.status === 'Approved').length;
+    const rejected = rows.filter(r => r.status === 'Rejected').length;
+    return { total: rows.length, pending, approved, rejected };
+  }, [adminView]);
 
   if (loading) {
     return (
@@ -485,7 +504,7 @@ const AttendanceHistory = () => {
                   fetchAdminView();
                 }}
               >
-                Admin View (Weekly)
+                Admin View
               </button>
             </div>
           )}
@@ -568,12 +587,45 @@ const AttendanceHistory = () => {
           {/* Admin Filters */}
           <div className="card mb-4">
             <div className="card-header bg-info text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-funnel me-2"></i>Filters
-              </h5>
+              <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <h5 className="mb-0">
+                  <i className="bi bi-funnel me-2"></i>Admin Filters
+                </h5>
+                <div className="d-flex flex-wrap gap-2">
+                  <span className="badge bg-dark">Total: {adminStats.total}</span>
+                  <span className="badge bg-warning text-dark">Pending: {adminStats.pending}</span>
+                  <span className="badge bg-success">Approved: {adminStats.approved}</span>
+                  <span className="badge bg-danger">Rejected: {adminStats.rejected}</span>
+                </div>
+              </div>
             </div>
             <div className="card-body">
               <div className="row g-3">
+                <div className="col-md-3">
+                  <label className="form-label">View</label>
+                  <select
+                    className="form-select"
+                    value={adminFilter.viewType}
+                    onChange={(e) => {
+                      const viewType = e.target.value;
+                      // reset irrelevant fields for cleaner UX
+                      setAdminFilter((prev) => ({
+                        ...prev,
+                        viewType,
+                        week_start: viewType === 'week' ? (prev.week_start || getDefaultWeekStart()) : '',
+                        date: viewType === 'date' ? prev.date : '',
+                        month: viewType === 'month' ? prev.month : '',
+                        // keep year for month/year views
+                        year: prev.year || new Date().getFullYear()
+                      }));
+                    }}
+                  >
+                    <option value="week">Week</option>
+                    <option value="month">Month</option>
+                    <option value="year">Year</option>
+                    <option value="date">Specific Date</option>
+                  </select>
+                </div>
                 <div className="col-md-3">
                   <label className="form-label">Employee</label>
                   <select
@@ -583,63 +635,87 @@ const AttendanceHistory = () => {
                   >
                     <option value="">All Employees</option>
                     {users.map(u => (
-                      <option key={u.id} value={u.id}>{u.name}</option>
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.role})
+                      </option>
                     ))}
                   </select>
                 </div>
-                <div className="col-md-3">
-                  <label className="form-label">Week Start</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={adminFilter.week_start}
-                    onChange={(e) => {
-                      setAdminFilter({ ...adminFilter, week_start: e.target.value, date: '', month: '' });
-                    }}
-                  />
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Date</label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={adminFilter.date}
-                    onChange={(e) => {
-                      setAdminFilter({ ...adminFilter, date: e.target.value, week_start: '', month: '' });
-                    }}
-                  />
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Month</label>
-                  <select
-                    className="form-select"
-                    value={adminFilter.month}
-                    onChange={(e) => {
-                      setAdminFilter({ ...adminFilter, month: e.target.value, week_start: '', date: '' });
-                    }}
-                  >
-                    <option value="">Select Month</option>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
-                      <option key={m} value={m}>{new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}</option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-md-2">
-                  <label className="form-label">Year</label>
-                  <input
-                    type="number"
-                    className="form-control"
-                    value={adminFilter.year}
-                    onChange={(e) => setAdminFilter({ ...adminFilter, year: e.target.value })}
-                  />
-                </div>
+                {adminFilter.viewType === 'week' && (
+                  <div className="col-md-3">
+                    <label className="form-label">Week Start</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={adminFilter.week_start}
+                      onChange={(e) => setAdminFilter({ ...adminFilter, week_start: e.target.value })}
+                    />
+                  </div>
+                )}
+                {adminFilter.viewType === 'date' && (
+                  <div className="col-md-3">
+                    <label className="form-label">Date</label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={adminFilter.date}
+                      onChange={(e) => setAdminFilter({ ...adminFilter, date: e.target.value })}
+                    />
+                  </div>
+                )}
+                {adminFilter.viewType === 'month' && (
+                  <>
+                    <div className="col-md-3">
+                      <label className="form-label">Month</label>
+                      <select
+                        className="form-select"
+                        value={adminFilter.month}
+                        onChange={(e) => setAdminFilter({ ...adminFilter, month: e.target.value })}
+                      >
+                        <option value="">Select Month</option>
+                        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(m => (
+                          <option key={m} value={m}>
+                            {new Date(2000, m - 1).toLocaleString('default', { month: 'long' })}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-md-3">
+                      <label className="form-label">Year</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        value={adminFilter.year}
+                        onChange={(e) => setAdminFilter({ ...adminFilter, year: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
+                {adminFilter.viewType === 'year' && (
+                  <div className="col-md-3">
+                    <label className="form-label">Year</label>
+                    <input
+                      type="number"
+                      className="form-control"
+                      value={adminFilter.year}
+                      onChange={(e) => setAdminFilter({ ...adminFilter, year: e.target.value })}
+                    />
+                  </div>
+                )}
               </div>
               <div className="row mt-3">
                 <div className="col-12">
                   <button
                     className="btn btn-outline-secondary me-2"
                     onClick={() => {
-                      setAdminFilter({ user_id: '', week_start: '', date: '', month: '', year: new Date().getFullYear() });
+                      setAdminFilter({
+                        user_id: '',
+                        week_start: getDefaultWeekStart(),
+                        date: '',
+                        month: '',
+                        year: new Date().getFullYear(),
+                        viewType: 'week'
+                      });
                     }}
                   >
                     Clear Filters
@@ -662,7 +738,7 @@ const AttendanceHistory = () => {
           </div>
 
           {/* Weekly Arrangement View */}
-          {adminView && adminView.attendance_by_user && adminView.attendance_by_user.length > 0 ? (
+          {adminFilter.viewType === 'week' && adminView && adminView.attendance_by_user && adminView.attendance_by_user.length > 0 ? (
             <div className="card">
               <div className="card-header bg-primary text-white">
                 <h5 className="mb-0">
@@ -789,6 +865,88 @@ const AttendanceHistory = () => {
               <div className="card-body text-center py-5">
                 <i className="bi bi-calendar-x text-muted" style={{ fontSize: '3rem' }}></i>
                 <p className="text-muted mt-3">No attendance records found for the selected filters</p>
+              </div>
+            </div>
+          )}
+
+          {/* Month / Year / Date: Flat table view */}
+          {adminFilter.viewType !== 'week' && (
+            <div className="card">
+              <div className="card-header bg-primary text-white">
+                <h5 className="mb-0">
+                  <i className="bi bi-table me-2"></i>
+                  Attendance ({adminFilter.viewType.toUpperCase()})
+                </h5>
+              </div>
+              <div className="card-body">
+                {!adminView?.attendance?.length ? (
+                  <div className="text-center py-5">
+                    <i className="bi bi-calendar-x text-muted" style={{ fontSize: '3rem' }}></i>
+                    <p className="text-muted mt-3">No attendance records found for the selected filters</p>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle">
+                      <thead>
+                        <tr>
+                          <th>Date</th>
+                          <th>Employee</th>
+                          <th>Role</th>
+                          <th>Sign In</th>
+                          <th>Sign Out</th>
+                          <th>Status</th>
+                          <th style={{ width: 120 }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {adminView.attendance.map((record) => {
+                          const statusBadge = getStatusBadge(record.status);
+                          return (
+                            <tr key={record.id}>
+                              <td>{new Date(record.attendance_date).toLocaleDateString()}</td>
+                              <td>
+                                <div className="fw-semibold">{record.user_display_name || record.user_name || 'N/A'}</div>
+                                <div className="text-muted small">{record.user_email || ''}</div>
+                              </td>
+                              <td>
+                                <span className="badge bg-secondary">{record.user_role || 'N/A'}</span>
+                              </td>
+                              <td>
+                                {record.sign_in_time ? new Date(record.sign_in_time).toLocaleTimeString() : '—'}
+                                {record.sign_in_late ? <span className="badge bg-warning text-dark ms-2">Late</span> : null}
+                              </td>
+                              <td>
+                                {record.sign_out_time ? new Date(record.sign_out_time).toLocaleTimeString() : '—'}
+                                {record.sign_out_early ? <span className="badge bg-warning text-dark ms-2">Early</span> : null}
+                              </td>
+                              <td>
+                                <span className={`badge bg-${statusBadge.color}`}>{statusBadge.text}</span>
+                              </td>
+                              <td>
+                                {record.status === 'Pending' ? (
+                                  <div className="btn-group btn-group-sm" role="group">
+                                    <button
+                                      className="btn btn-success"
+                                      onClick={() => {
+                                        setApprovingId(record.id);
+                                        setApprovalNotes('');
+                                      }}
+                                      title="Approve / Reject"
+                                    >
+                                      Review
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-muted small">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             </div>
           )}

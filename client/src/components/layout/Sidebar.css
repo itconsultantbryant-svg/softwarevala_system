@@ -118,6 +118,27 @@
   text-align: center;
 }
 
+.sidebar-menu-item .badge {
+  font-size: 0.7rem;
+  padding: 2px 6px;
+}
+
+.sidebar-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar-menu-item span:not(.badge) {
+  flex: 1;
+}
+
+.sidebar-menu li {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
 .sidebar-footer {
   padding: 20px;
   border-top: 1px solid rgba(255,255,255,0.1);

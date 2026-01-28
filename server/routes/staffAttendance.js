@@ -238,6 +238,12 @@ router.get(
 
         where += ' AND sa.attendance_date BETWEEN ? AND ?';
         params.push(start, end);
+      } else if (year) {
+        // Year-only view: entire year range
+        const start = `${year}-01-01`;
+        const end = `${year}-12-31`;
+        where += ' AND sa.attendance_date BETWEEN ? AND ?';
+        params.push(start, end);
       } else {
         // Default: current week so admin always sees recent staff/dept head attendance
         const { start: wStart, end: wEnd } = getDefaultWeekRange();
