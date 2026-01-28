@@ -77,7 +77,10 @@ router.post('/login', [
       return res.status(403).json({ error: 'Login access restricted. Contact administrator.' });
     }
 
-    if (!user.is_active) {
+    // Student and Instructor can always log in with their email/password (even when pending approval).
+    // Other roles require is_active.
+    const canBypassActive = canonicalRole === 'Student' || canonicalRole === 'Instructor';
+    if (!canBypassActive && !user.is_active) {
       console.log('Account is deactivated for user:', user.id);
       return res.status(403).json({ error: 'Account is deactivated. Please contact administrator.' });
     }
