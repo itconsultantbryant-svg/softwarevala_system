@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { isAcademyStaff, canApproveAcademy } from '../../utils/academyUtils';
+import { getSocket } from '../../config/socket';
 import StudentForm from './StudentForm';
 import CourseForm from './CourseForm';
 import InstructorForm from './InstructorForm';
@@ -24,6 +25,15 @@ const AcademyManagement = () => {
   const [editingCourse, setEditingCourse] = useState(null);
   const [editingInstructor, setEditingInstructor] = useState(null);
   const [editingCohort, setEditingCohort] = useState(null);
+
+  const [gradesPending, setGradesPending] = useState([]);
+  const [gradesPendingLoading, setGradesPendingLoading] = useState(false);
+  const [gradeForm, setGradeForm] = useState({ student_id: '', course_id: '', proposed_grade: '' });
+  const [gradeEnrolledCourses, setGradeEnrolledCourses] = useState([]);
+  const [gradeSubmitting, setGradeSubmitting] = useState(false);
+  const [gradeActionId, setGradeActionId] = useState(null);
+  const [gradeActionMode, setGradeActionMode] = useState(null);
+  const [gradeNotes, setGradeNotes] = useState('');
   
   // Filter states for students
   const [studentFilters, setStudentFilters] = useState({
@@ -42,16 +52,15 @@ const AcademyManagement = () => {
 
   // Refetch data when user object changes (in case department/position are loaded later)
   useEffect(() => {
-    if (user && (userIsAcademyStaff || user.role === 'Admin')) {
-      // If we're on a tab, refetch that data
-      if (activeTab === 'courses') {
+    if (user && (userIsAcademyStaff || user.role === 'Admin' || user.role === 'Instructor')) {
+      if (activeTab === 'courses') fetchCourses();
+      else if (activeTab === 'students') fetchStudents();
+      else if (activeTab === 'instructors') fetchInstructors();
+      else if (activeTab === 'cohorts') fetchCohorts();
+      else if (activeTab === 'grades') {
         fetchCourses();
-      } else if (activeTab === 'students') {
         fetchStudents();
-      } else if (activeTab === 'instructors') {
-        fetchInstructors();
-      } else if (activeTab === 'cohorts') {
-        fetchCohorts();
+        if (userCanApprove) fetchGradesPending();
       }
     }
   }, [user?.department, user?.position, user?.email]);
@@ -65,6 +74,10 @@ const AcademyManagement = () => {
       fetchInstructors();
     } else if (activeTab === 'cohorts') {
       fetchCohorts();
+    } else if (activeTab === 'grades') {
+      fetchCourses();
+      fetchStudents();
+      if (userCanApprove) fetchGradesPending();
     }
   }, [activeTab]);
   
@@ -135,6 +148,42 @@ const AcademyManagement = () => {
     }
   };
 
+  const fetchGradesPending = async () => {
+    setGradesPendingLoading(true);
+    try {
+      const res = await api.get('/academy/grades/pending');
+      setGradesPending(res.data.pending || []);
+    } catch (e) {
+      console.error('Fetch pending grades error:', e);
+      setGradesPending([]);
+    } finally {
+      setGradesPendingLoading(false);
+    }
+  };
+
+  const fetchGradeEnrolledCourses = async (studentId) => {
+    if (!studentId) { setGradeEnrolledCourses([]); return; }
+    try {
+      const res = await api.get(`/academy/students/${studentId}/enrolled-courses`);
+      setGradeEnrolledCourses(res.data.courses || []);
+    } catch (e) {
+      console.error('Fetch enrolled courses error:', e);
+      setGradeEnrolledCourses([]);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'grades' || !userCanApprove) return;
+    const socket = getSocket();
+    if (!socket) return;
+    const onNotification = (n) => {
+      const link = n && typeof n === 'object' && n.link ? n.link : null;
+      if (link && String(link).includes('academy')) fetchGradesPending();
+    };
+    socket.on('notification', onNotification);
+    return () => socket.off('notification', onNotification);
+  }, [activeTab, userCanApprove]);
+
   const handleAddStudent = () => {
     setEditingStudent(null);
     setShowStudentForm(true);
@@ -203,6 +252,52 @@ const AcademyManagement = () => {
       status: '',
       search: ''
     });
+  };
+
+  const handleGradeStudentChange = (studentId) => {
+    setGradeForm((f) => ({ ...f, student_id: studentId, course_id: '', proposed_grade: f.proposed_grade }));
+    fetchGradeEnrolledCourses(studentId);
+  };
+
+  const handleGradeSubmit = async (e) => {
+    e.preventDefault();
+    const { student_id, course_id, proposed_grade } = gradeForm;
+    if (!student_id || !course_id || !proposed_grade?.trim()) return;
+    setGradeSubmitting(true);
+    try {
+      await api.post('/academy/grades/submit', { student_id: parseInt(student_id, 10), course_id: parseInt(course_id, 10), proposed_grade: proposed_grade.trim() });
+      setGradeForm({ student_id: '', course_id: '', proposed_grade: '' });
+      setGradeEnrolledCourses([]);
+      alert('Grade submitted for approval.');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to submit grade');
+    } finally {
+      setGradeSubmitting(false);
+    }
+  };
+
+  const handleGradeApprove = async (id) => {
+    try {
+      await api.put(`/academy/grades/${id}/approve`, { notes: gradeNotes || undefined });
+      setGradeActionId(null);
+      setGradeActionMode(null);
+      setGradeNotes('');
+      fetchGradesPending();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to approve');
+    }
+  };
+
+  const handleGradeReject = async (id) => {
+    try {
+      await api.put(`/academy/grades/${id}/reject`, { notes: gradeNotes || undefined });
+      setGradeActionId(null);
+      setGradeActionMode(null);
+      setGradeNotes('');
+      fetchGradesPending();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to reject');
+    }
   };
 
   const handleEditInstructor = async (instructor) => {
@@ -351,7 +446,25 @@ const AcademyManagement = () => {
                 Cohorts
               </button>
             </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link ${activeTab === 'grades' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grades')}
+              >
+                Grades {userCanApprove && gradesPending.length > 0 && <span className="badge bg-warning text-dark">{gradesPending.length}</span>}
+              </button>
+            </li>
           </>
+        )}
+        {user?.role === 'Instructor' && !userIsAcademyStaff && (
+          <li className="nav-item">
+            <button
+              className={`nav-link ${activeTab === 'grades' ? 'active' : ''}`}
+              onClick={() => setActiveTab('grades')}
+            >
+              Grades
+            </button>
+          </li>
         )}
       </ul>
 
@@ -820,6 +933,131 @@ const AcademyManagement = () => {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'grades' && (
+        <div className="row">
+          {(userIsAcademyStaff || user?.role === 'Instructor') && (
+            <div className="col-lg-5 mb-4">
+              <div className="card">
+                <div className="card-header fw-bold">Submit grade</div>
+                <div className="card-body">
+                  <form onSubmit={handleGradeSubmit}>
+                    <div className="mb-3">
+                      <label className="form-label">Student</label>
+                      <select
+                        className="form-select"
+                        value={gradeForm.student_id}
+                        onChange={(e) => handleGradeStudentChange(e.target.value)}
+                        required
+                      >
+                        <option value="">Select student</option>
+                        {students.filter(s => s.approved === 1 || s.approved === true).map((s) => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.student_id})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Course</label>
+                      <select
+                        className="form-select"
+                        value={gradeForm.course_id}
+                        onChange={(e) => setGradeForm((f) => ({ ...f, course_id: e.target.value }))}
+                        required
+                        disabled={!gradeForm.student_id}
+                      >
+                        <option value="">Select course</option>
+                        {gradeEnrolledCourses.map((c) => (
+                          <option key={c.course_id} value={c.course_id}>{c.course_code} – {c.title}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mb-3">
+                      <label className="form-label">Proposed grade</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={gradeForm.proposed_grade}
+                        onChange={(e) => setGradeForm((f) => ({ ...f, proposed_grade: e.target.value }))}
+                        placeholder="e.g. A, B+, 85"
+                        required
+                      />
+                    </div>
+                    <button type="submit" className="btn btn-primary" disabled={gradeSubmitting}>
+                      {gradeSubmitting ? 'Submitting…' : 'Submit for approval'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+          {userCanApprove && (
+            <div className={userIsAcademyStaff || user?.role === 'Instructor' ? 'col-lg-7' : 'col-12'}>
+              <div className="card">
+                <div className="card-header fw-bold">Pending approval</div>
+                <div className="card-body p-0">
+                  {gradesPendingLoading ? (
+                    <div className="text-center py-4"><div className="spinner-border text-primary" /></div>
+                  ) : gradesPending.length === 0 ? (
+                    <div className="p-4 text-center text-muted">No pending grade submissions.</div>
+                  ) : (
+                    <div className="table-responsive">
+                      <table className="table table-hover mb-0">
+                        <thead>
+                          <tr>
+                            <th>Student</th>
+                            <th>Course</th>
+                            <th>Grade</th>
+                            <th>Submitted by</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {gradesPending.map((g) => (
+                            <tr key={g.id}>
+                              <td><strong>{g.student_name}</strong><br /><small className="text-muted">{g.student_email}</small></td>
+                              <td>{g.course_title} ({g.course_code})</td>
+                              <td><strong>{g.proposed_grade}</strong></td>
+                              <td>{g.submitted_by_name || '—'}</td>
+                              <td>
+                                <button type="button" className="btn btn-sm btn-success me-1" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Approve</button>
+                                <button type="button" className="btn btn-sm btn-danger" onClick={() => { setGradeActionId(g.id); setGradeActionMode('reject'); setGradeNotes(''); }}>Reject</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+              {gradeActionId && gradeActionMode && (
+                <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+                  <div className="modal-dialog modal-dialog-centered">
+                    <div className="modal-content">
+                      <div className="modal-header">
+                        <h5 className="modal-title">{gradeActionMode === 'approve' ? 'Approve' : 'Reject'} grade</h5>
+                        <button type="button" className="btn-close" onClick={() => { setGradeActionId(null); setGradeActionMode(null); setGradeNotes(''); }} aria-label="Close" />
+                      </div>
+                      <div className="modal-body">
+                        <label className="form-label">Notes (optional)</label>
+                        <textarea className="form-control" rows={3} value={gradeNotes} onChange={(e) => setGradeNotes(e.target.value)} placeholder={gradeActionMode === 'reject' ? 'Reason for rejection…' : ''} />
+                      </div>
+                      <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={() => { setGradeActionId(null); setGradeActionMode(null); setGradeNotes(''); }}>Cancel</button>
+                        {gradeActionMode === 'approve' ? (
+                          <button type="button" className="btn btn-success" onClick={() => handleGradeApprove(gradeActionId)}>Approve</button>
+                        ) : (
+                          <button type="button" className="btn btn-danger" onClick={() => handleGradeReject(gradeActionId)}>Reject</button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

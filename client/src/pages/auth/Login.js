@@ -38,6 +38,10 @@ const Login = () => {
               navigate('/department-dashboard');
             } else if (user.role === 'Staff') {
               navigate('/staff-dashboard');
+            } else if (user.role === 'Student') {
+              navigate('/student');
+            } else if (user.role === 'Instructor') {
+              navigate('/academy');
             } else {
               navigate('/dashboard');
             }

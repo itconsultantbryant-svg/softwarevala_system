@@ -1,15 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { format } from 'date-fns';
 import { exportToPDF, exportToExcel, printContent } from '../../utils/exportUtils';
+import { getSocket } from '../../config/socket';
+
+const TAB_STUDENTS = 'students';
+const TAB_PENDING = 'pending';
 
 const StudentPaymentManagement = () => {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState(TAB_STUDENTS);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [payments, setPayments] = useState([]);
   const [enrolledCourses, setEnrolledCourses] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [pendingLoading, setPendingLoading] = useState(false);
+  const [actionId, setActionId] = useState(null);
+  const [actionMode, setActionMode] = useState(null);
+  const [adminNotes, setAdminNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -24,9 +34,36 @@ const StudentPaymentManagement = () => {
     notes: ''
   });
 
+  const fetchPending = useCallback(async () => {
+    setPendingLoading(true);
+    try {
+      const res = await api.get('/student-payments/pending');
+      setPending(res.data.pending || []);
+    } catch (err) {
+      console.error('Fetch pending error:', err);
+    } finally {
+      setPendingLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchStudents();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === TAB_PENDING) fetchPending();
+  }, [activeTab, fetchPending]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+    const onNotification = (n) => {
+      const link = n && typeof n === 'object' && n.link ? n.link : null;
+      if (link && String(link).includes('student-payments')) fetchPending();
+    };
+    socket.on('notification', onNotification);
+    return () => socket.off('notification', onNotification);
+  }, [fetchPending]);
 
   useEffect(() => {
     if (selectedStudent) {
@@ -112,6 +149,38 @@ const StudentPaymentManagement = () => {
     } catch (err) {
       console.error('Error adding payment:', err);
       setError('Failed to add payment: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleApprove = async (id) => {
+    setError('');
+    setSuccess('');
+    try {
+      await api.put(`/student-payments/transactions/${id}/approve`, { admin_notes: adminNotes || undefined });
+      setSuccess('Payment approved.');
+      setActionId(null);
+      setAdminNotes('');
+      fetchPending();
+      fetchStudents();
+      if (selectedStudent) fetchStudentPayments(selectedStudent.id);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to approve');
+    }
+  };
+
+  const handleReject = async (id) => {
+    setError('');
+    setSuccess('');
+    try {
+      await api.put(`/student-payments/transactions/${id}/reject`, { admin_notes: adminNotes || undefined });
+      setSuccess('Payment rejected.');
+      setActionId(null);
+      setAdminNotes('');
+      fetchPending();
+      fetchStudents();
+      if (selectedStudent) fetchStudentPayments(selectedStudent.id);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to reject');
     }
   };
 
@@ -233,6 +302,10 @@ const StudentPaymentManagement = () => {
     );
   }
 
+  const openApprove = (id) => { setActionId(id); setActionMode('approve'); setAdminNotes(''); };
+  const openReject = (id) => { setActionId(id); setActionMode('reject'); setAdminNotes(''); };
+  const closeModal = () => { setActionId(null); setActionMode(null); setAdminNotes(''); };
+
   return (
     <div className="container-fluid">
       <div className="d-flex justify-content-between align-items-center mb-4">
@@ -243,6 +316,27 @@ const StudentPaymentManagement = () => {
           </button>
         </div>
       </div>
+
+      <ul className="nav nav-tabs mb-3">
+        <li className="nav-item">
+          <button
+            type="button"
+            className={`nav-link ${activeTab === TAB_STUDENTS ? 'active' : ''}`}
+            onClick={() => setActiveTab(TAB_STUDENTS)}
+          >
+            Students
+          </button>
+        </li>
+        <li className="nav-item">
+          <button
+            type="button"
+            className={`nav-link ${activeTab === TAB_PENDING ? 'active' : ''}`}
+            onClick={() => setActiveTab(TAB_PENDING)}
+          >
+            Pending Requests {pending.length > 0 && <span className="badge bg-warning text-dark">{pending.length}</span>}
+          </button>
+        </li>
+      </ul>
 
       {error && (
         <div className="alert alert-danger alert-dismissible fade show" role="alert">
@@ -257,7 +351,86 @@ const StudentPaymentManagement = () => {
         </div>
       )}
 
-      <div className="row">
+      {activeTab === TAB_PENDING && (
+        <>
+          {pendingLoading ? (
+            <div className="d-flex justify-content-center py-5"><div className="spinner-border text-primary" /></div>
+          ) : (
+            <div className="card">
+              <div className="card-header fw-bold">Pending payment requests</div>
+              <div className="card-body p-0">
+                {pending.length === 0 ? (
+                  <div className="p-4 text-center text-muted">No pending requests.</div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover mb-0">
+                      <thead>
+                        <tr>
+                          <th>Student</th>
+                          <th>Course</th>
+                          <th className="text-end">Amount</th>
+                          <th>Date</th>
+                          <th>Method</th>
+                          <th>Reference</th>
+                          <th></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pending.map((p) => (
+                          <tr key={p.id}>
+                            <td><strong>{p.student_name}</strong><br /><small className="text-muted">{p.student_email}</small></td>
+                            <td>{p.course_title} ({p.course_code})</td>
+                            <td className="text-end">{(parseFloat(p.amount) || 0).toFixed(2)}</td>
+                            <td>{p.payment_date ? format(new Date(p.payment_date), 'PP') : '—'}</td>
+                            <td>{p.payment_method || '—'}</td>
+                            <td>{p.payment_reference || '—'}</td>
+                            <td>
+                              <button type="button" className="btn btn-sm btn-success me-1" onClick={() => openApprove(p.id)}>Approve</button>
+                              <button type="button" className="btn btn-sm btn-danger" onClick={() => openReject(p.id)}>Reject</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {actionId && actionMode && (
+            <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+              <div className="modal-dialog modal-dialog-centered">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h5 className="modal-title">{actionMode === 'approve' ? 'Approve' : 'Reject'} payment request</h5>
+                    <button type="button" className="btn-close" onClick={closeModal} aria-label="Close" />
+                  </div>
+                  <div className="modal-body">
+                    <label className="form-label">Notes (optional)</label>
+                    <textarea
+                      className="form-control"
+                      rows={3}
+                      value={adminNotes}
+                      onChange={(e) => setAdminNotes(e.target.value)}
+                      placeholder={actionMode === 'reject' ? 'Reason for rejection…' : 'Add any notes…'}
+                    />
+                  </div>
+                  <div className="modal-footer">
+                    <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
+                    {actionMode === 'approve' ? (
+                      <button type="button" className="btn btn-success" onClick={() => handleApprove(actionId)}>Approve</button>
+                    ) : (
+                      <button type="button" className="btn btn-danger" onClick={() => handleReject(actionId)}>Reject</button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeTab === TAB_STUDENTS && <div className="row">
         <div className="col-md-4">
           <div className="card">
             <div className="card-header">
@@ -561,7 +734,7 @@ const StudentPaymentManagement = () => {
             </div>
           )}
         </div>
-      </div>
+      </div>}
     </div>
   );
 };

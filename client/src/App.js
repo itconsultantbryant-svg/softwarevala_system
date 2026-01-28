@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
+import NavigateToAppHome from './components/NavigateToAppHome';
 import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
@@ -52,7 +53,7 @@ import Targets from './pages/targets/Targets';
 import PettyCash from './pages/finance/PettyCash';
 import Appraisals from './pages/appraisals/Appraisals';
 import StudentPaymentManagement from './pages/departments/StudentPaymentManagement';
-import StudentPortal from './pages/academy/StudentPotal';
+import StudentPortal from './pages/academy/StudentPortal';
 import StudentCertificates from './pages/academy/StudentCertificates';
 import StudentCourses from './pages/academy/StudentCourses';
 import StudentBilling from './pages/academy/StudentBilling';
@@ -80,7 +81,7 @@ function App() {
                       <div className="main-content-wrapper">
                         <TopBar />
                         <Routes>
-                          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                          <Route path="/" element={<NavigateToAppHome />} />
                           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
                           <Route path="/staff-dashboard" element={<PrivateRoute requiredRole="Staff"><StaffDashboard /></PrivateRoute>} />
                           <Route path="/staff-client-reports" element={<PrivateRoute requiredRole="Staff"><StaffClientReports /></PrivateRoute>} />
@@ -116,15 +117,15 @@ function App() {
                           <Route path="/meetings" element={<PrivateRoute><MeetingHistory /></PrivateRoute>} />
                           <Route path="/calendar" element={<PrivateRoute><Calendar /></PrivateRoute>} />
                           <Route path="/archived-documents" element={<PrivateRoute><ArchivedDocuments /></PrivateRoute>} />
-                          <Route path="/attendance" element={<PrivateRoute><AttendanceHistory /></PrivateRoute>} />
+                          <Route path="/attendance" element={<PrivateRoute requiredRoles={['Admin', 'Staff', 'DepartmentHead']}><AttendanceHistory /></PrivateRoute>} />
                           <Route path="/requisitions" element={<PrivateRoute><RequisitionHistory /></PrivateRoute>} />
                           <Route path="/targets" element={<PrivateRoute><Targets /></PrivateRoute>} />
                           <Route path="/profile" element={<Profile />} />
-                          <Route path="/student" element={<StudentPortal />} />
-                          <Route path="/student/courses" element={<StudentCourses />} />
-                          <Route path="/student/grades" element={<StudentGrades />} />
-                          <Route path="/student/certificates" element={<StudentCertificates />} />
-                          <Route path="/student/billing" element={<StudentBilling />} />
+                          <Route path="/student" element={<PrivateRoute requiredRole="Student"><StudentPortal /></PrivateRoute>} />
+                          <Route path="/student/courses" element={<PrivateRoute requiredRole="Student"><StudentCourses /></PrivateRoute>} />
+                          <Route path="/student/grades" element={<PrivateRoute requiredRole="Student"><StudentGrades /></PrivateRoute>} />
+                          <Route path="/student/certificates" element={<PrivateRoute requiredRole="Student"><StudentCertificates /></PrivateRoute>} />
+                          <Route path="/student/billing" element={<PrivateRoute requiredRole="Student"><StudentBilling /></PrivateRoute>} />
                           <Route path="/student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />
                           <Route path="*" element={<NotFound />} />
                         </Routes>

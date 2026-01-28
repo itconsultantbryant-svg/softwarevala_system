@@ -136,6 +136,26 @@ function requirePermission(module, action) {
 const STUDENT_PAYMENT_EMAILS = ['sean@prinstinegroup.org', 'cvulue@prinstinegroup.org'];
 
 /**
+ * Return user IDs who have finance/student-payment access (for notifications).
+ */
+async function getFinanceAccessUserIds() {
+  const db = require('../config/database');
+  const adminIds = await db.all('SELECT id FROM users WHERE role = ? AND is_active = 1', ['Admin']);
+  const byEmail = await db.all(
+    "SELECT id FROM users WHERE LOWER(TRIM(email)) IN (?, ?) AND is_active = 1",
+    [STUDENT_PAYMENT_EMAILS[0], STUDENT_PAYMENT_EMAILS[1]]
+  );
+  const deptHeads = await db.all(
+    `SELECT u.id FROM users u
+     JOIN departments d ON d.manager_id = u.id OR LOWER(TRIM(d.head_email)) = LOWER(TRIM(u.email))
+     WHERE u.role = 'DepartmentHead' AND u.is_active = 1
+       AND (LOWER(d.name) LIKE '%finance%' OR LOWER(d.name) LIKE '%academy%' OR LOWER(d.name) LIKE '%elearning%')`
+  );
+  const ids = new Set([...adminIds.map((r) => r.id), ...byEmail.map((r) => r.id), ...deptHeads.map((r) => r.id)]);
+  return [...ids];
+}
+
+/**
  * Middleware: Allow Student Payments only for Finance head, Assistant Finance (Sean),
  * Academy head, Academy staff (cvulue@). Admin always allowed.
  */
@@ -171,6 +191,7 @@ module.exports = {
   requireRole,
   requireStaffManagement,
   requireStudentPaymentAccess,
+  getFinanceAccessUserIds,
   checkPermission,
   requirePermission
 };

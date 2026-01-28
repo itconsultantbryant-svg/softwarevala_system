@@ -119,6 +119,10 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
       ]
     );
 
+    if (global.io) {
+      global.io.emit('attendance_created', { user_id: userId });
+    }
+
     res.json({ message: 'Signed in successfully' });
   } catch (err) {
     console.error(err);
@@ -171,6 +175,10 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
         attendance.id
       ]
     );
+
+    if (global.io) {
+      global.io.emit('attendance_updated', { user_id: req.user.id });
+    }
 
     res.json({ message: 'Signed out successfully' });
   } catch (err) {
@@ -324,6 +332,7 @@ router.put(
         return res.status(400).json({ error: 'Notes are required when rejecting attendance' });
       }
 
+      const row = await db.get('SELECT user_id FROM staff_attendance WHERE id = ?', [req.params.id]);
       await db.run(
         `
         UPDATE staff_attendance
@@ -335,6 +344,11 @@ router.put(
         `,
         [status, req.user.id, admin_notes || null, req.params.id]
       );
+
+      if (global.io) {
+        global.io.emit('admin_attendance_updated');
+        if (row?.user_id) global.io.emit('attendance_updated', { user_id: row.user_id });
+      }
 
       res.json({ message: `Attendance ${status.toLowerCase()}` });
     } catch (err) {

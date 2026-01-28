@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { getSocket } from '../../config/socket';
@@ -40,7 +40,8 @@ const AttendanceHistory = () => {
   const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
   const [bulkNotes, setBulkNotes] = useState('');
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
-  const [viewMode, setViewMode] = useState('admin'); // Admin defaults to admin view to see staff/dept head attendance
+  const [viewMode, setViewMode] = useState('standard');
+  const adminDefaultViewSet = useRef(false);
 
   const fetchAttendance = useCallback(async () => {
     try {
@@ -110,15 +111,21 @@ const AttendanceHistory = () => {
   }, []);
 
   useEffect(() => {
-    if (user?.role === 'Admin') {
+    if (!user) return;
+    if (user.role === 'Admin') {
+      if (!adminDefaultViewSet.current) {
+        adminDefaultViewSet.current = true;
+        setViewMode('admin');
+      }
       fetchAdminView();
       fetchUsers();
     } else {
+      adminDefaultViewSet.current = false;
+      setViewMode('standard');
       fetchAttendance();
     }
     fetchTodayStatus();
-    
-    // Refresh every minute
+
     const interval = setInterval(() => {
       fetchTodayStatus();
     }, 60000);
@@ -128,83 +135,39 @@ const AttendanceHistory = () => {
   // Real-time updates via socket.io
   useEffect(() => {
     if (!user) return;
-    
     const socket = getSocket();
     if (!socket) return;
-    
-    // Wait for socket connection
-    if (!socket.connected) {
-      socket.once('connect', () => {
-        setupSocketListeners();
-      });
-      return;
-    }
-    
-    setupSocketListeners();
-    
-    function setupSocketListeners() {
 
     const handleAttendanceCreated = (data) => {
-      console.log('Attendance created event:', data);
-      if (user.role === 'Admin') {
-        fetchAdminView();
-      } else if (data.user_id === user.id) {
+      if (user.role === 'Admin') fetchAdminView();
+      else if (data?.user_id === user.id) {
         fetchAttendance();
         fetchTodayStatus();
       }
     };
 
     const handleAttendanceUpdated = (data) => {
-      console.log('Attendance updated event:', data);
-      if (user.role === 'Admin') {
-        fetchAdminView();
-      } else if (data.user_id === user.id) {
+      if (user.role === 'Admin') fetchAdminView();
+      else if (data?.user_id === user.id) {
         fetchAttendance();
         fetchTodayStatus();
       }
     };
 
-    const handleAdminAttendanceUpdated = (data) => {
-      console.log('Admin attendance updated event:', data);
-      if (user.role === 'Admin') {
-        fetchAdminView();
-      }
-    };
-
-    const handleRequisitionStatusUpdated = (data) => {
-      console.log('Requisition status updated event:', data);
-      if (user.role === 'Admin' && viewMode === 'admin') {
-        // Refresh admin view to show updated requisitions
-        setTimeout(() => {
-          fetchAdminView();
-        }, 300);
-      }
-    };
-
-    const handleRequisitionCreated = (data) => {
-      console.log('Requisition created event:', data);
-      if (user.role === 'Admin' && viewMode === 'admin') {
-        setTimeout(() => {
-          fetchAdminView();
-        }, 300);
-      }
+    const handleAdminAttendanceUpdated = () => {
+      if (user.role === 'Admin') fetchAdminView();
     };
 
     socket.on('attendance_created', handleAttendanceCreated);
     socket.on('attendance_updated', handleAttendanceUpdated);
     socket.on('admin_attendance_updated', handleAdminAttendanceUpdated);
-    socket.on('requisition_status_updated', handleRequisitionStatusUpdated);
-    socket.on('requisition_created', handleRequisitionCreated);
 
     return () => {
       socket.off('attendance_created', handleAttendanceCreated);
       socket.off('attendance_updated', handleAttendanceUpdated);
       socket.off('admin_attendance_updated', handleAdminAttendanceUpdated);
-      socket.off('requisition_status_updated', handleRequisitionStatusUpdated);
-      socket.off('requisition_created', handleRequisitionCreated);
     };
-    }
-  }, [user, viewMode]);
+  }, [user, fetchAdminView, fetchAttendance, fetchTodayStatus]);
 
   // (fetch* functions moved above into useCallback for stable deps)
 

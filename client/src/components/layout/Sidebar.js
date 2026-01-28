@@ -220,7 +220,11 @@ const Sidebar = () => {
 
     // Dashboard - Show appropriate dashboard based on role
     pushSection('Main');
-    if (userRole === 'staff') {
+    if (userRole === 'student') {
+      items.push({ path: '/student', label: 'Student Portal', icon: 'bi-mortarboard', roles: ['Student'], studentPortal: true });
+    } else if (userRole === 'instructor') {
+      items.push({ path: '/academy', label: 'Dashboard', icon: 'bi-house', roles: ['Instructor'], instructorMain: true });
+    } else if (userRole === 'staff') {
       items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house', roles: ['Staff'] });
     } else if (userRole === 'departmenthead') {
       items.push({ path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building', roles: ['DepartmentHead'] });
@@ -233,8 +237,8 @@ const Sidebar = () => {
     items.push(
       { path: '/clients', label: 'Clients', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
       { path: '/reports', label: 'Reports', icon: 'bi-file-text', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-      { path: '/academy', label: 'Academy', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff'], academy: true },
-      { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['*'] },
+      { path: '/academy', label: 'Academy', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff', 'Instructor'], academy: true, instructorAcademy: true },
+      { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['Admin', 'Staff', 'DepartmentHead'] },
       { path: '/requisitions', label: 'Requisitions', icon: 'bi-clipboard-check', roles: ['Admin', 'Staff', 'DepartmentHead'] },
       { path: '/targets', label: 'Targets', icon: 'bi-bullseye', roles: ['Admin', 'Staff', 'DepartmentHead'] }
     );
@@ -355,10 +359,11 @@ const Sidebar = () => {
               }
               
               // Check additional access requirements
-              const academyOk = !item.academy || hasAcademyAccess;
+              const academyOk = !item.academy || hasAcademyAccess || item.instructorAcademy === true;
               const financeOk = !item.finance || hasFinanceAccess;
+              const studentPortalOk = !item.studentPortal || userRole === 'student';
               
-              return roleOk && academyOk && financeOk;
+              return roleOk && academyOk && financeOk && studentPortalOk;
             })
             .map(item => {
               if (item.type === 'section') {
@@ -371,10 +376,12 @@ const Sidebar = () => {
               // Determine if this menu item is active
               const isActive = location.pathname === item.path ||
                 (item.path === '/staff-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'staff') ||
-                (item.path === '/department-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'departmenthead');
+                (item.path === '/department-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'departmenthead') ||
+                (item.path === '/student' && location.pathname.startsWith('/student')) ||
+                (item.path === '/academy' && location.pathname.startsWith('/academy'));
               
               return (
-                <li key={item.path}>
+                <li key={`${item.path}-${item.label}`}>
                   <Link to={item.path} className={`sidebar-menu-item ${isActive ? 'active' : ''}`}>
                     <i className={`bi ${item.icon}`}></i>
                     <span>{item.label}</span>

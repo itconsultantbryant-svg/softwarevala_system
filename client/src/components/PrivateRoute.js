@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
-const PrivateRoute = ({ children, requiredRole = null }) => {
+const PrivateRoute = ({ children, requiredRole = null, requiredRoles = null }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -27,15 +27,24 @@ const PrivateRoute = ({ children, requiredRole = null }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (requiredRole && user.role !== requiredRole) {
-    // Redirect to appropriate dashboard based on user role
+  const roleDenied = requiredRoles
+    ? !requiredRoles.includes(user.role)
+    : requiredRole && user.role !== requiredRole;
+
+  if (roleDenied) {
     if (user.role === 'DepartmentHead') {
       return <Navigate to="/department-dashboard" replace />;
-    } else if (user.role === 'Staff') {
-      return <Navigate to="/staff-dashboard" replace />;
-    } else {
-      return <Navigate to="/dashboard" replace />;
     }
+    if (user.role === 'Staff') {
+      return <Navigate to="/staff-dashboard" replace />;
+    }
+    if (user.role === 'Student') {
+      return <Navigate to="/student" replace />;
+    }
+    if (user.role === 'Instructor') {
+      return <Navigate to="/academy" replace />;
+    }
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

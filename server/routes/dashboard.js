@@ -118,6 +118,16 @@ router.get('/stats', authenticateToken, async (req, res) => {
       } else {
         stats = { enrollments: 0, certificates: 0 };
       }
+    } else if (role === 'Instructor') {
+      const instructor = await db.get('SELECT id FROM instructors WHERE user_id = ?', [userId]);
+      if (instructor) {
+        const coursesResult = await db.get('SELECT COUNT(*) as count FROM courses WHERE instructor_id = ? AND status = ?', [instructor.id, 'Active']);
+        stats = {
+          courses: coursesResult?.count || 0
+        };
+      } else {
+        stats = { courses: 0 };
+      }
     } else if (role === 'Client') {
       const client = await db.get('SELECT id, total_consultations, loan_amount FROM clients WHERE user_id = ?', [userId]);
       if (client) {

@@ -68,10 +68,11 @@ router.post('/login', [
 
     console.log('User found:', { id: user.id, email: user.email, role: user.role, is_active: user.is_active });
 
-    // Allow Admin, DepartmentHead, and Staff roles to log in
-    if (user.role !== 'Admin' && user.role !== 'DepartmentHead' && user.role !== 'Staff') {
+    // Allow Admin, DepartmentHead, Staff, Student, and Instructor to log in
+    const allowedRoles = ['Admin', 'DepartmentHead', 'Staff', 'Student', 'Instructor'];
+    if (!allowedRoles.includes(user.role)) {
       console.log('Login denied - role not allowed:', user.role);
-      return res.status(403).json({ error: 'Login access restricted. Only Administrators, Department Heads, and Staff can log in.' });
+      return res.status(403).json({ error: 'Login access restricted. Contact administrator.' });
     }
 
     if (!user.is_active) {

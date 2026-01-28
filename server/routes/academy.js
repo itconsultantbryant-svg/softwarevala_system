@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticateToken, requireRole } = require('../utils/auth');
+const { authenticateToken, requireRole, getFinanceAccessUserIds } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
+const { sendBulkNotifications, sendNotificationToUser, sendNotificationToRole } = require('../utils/notifications');
 const crypto = require('crypto');
 
 // Generate unique student ID
@@ -102,6 +103,223 @@ async function isAcademyStaff(user) {
 }
 
 // ========== STUDENTS ==========
+
+// Resolve current student record (students row) for req.user; requires role Student.
+async function getCurrentStudent(req) {
+  if (req.user.role !== 'Student') return null;
+  return db.get(
+    'SELECT s.*, u.name, u.email, u.phone, u.profile_image FROM students s JOIN users u ON s.user_id = u.id WHERE s.user_id = ? AND s.approved = 1',
+    [req.user.id]
+  );
+}
+
+// ----- Student self-service: /students/me (must be before /students/:id) -----
+
+// GET /api/academy/students/me — current student profile
+router.get('/students/me', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    res.json({ student });
+  } catch (e) {
+    console.error('Get students/me error:', e);
+    res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// GET /api/academy/students/me/courses — enrolled courses
+router.get('/students/me/courses', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    const courses = await db.all(
+      `SELECT e.id, e.course_id, e.enrollment_date, e.status as enrollment_status,
+              c.course_code, c.title, c.mode, c.status as course_status
+       FROM student_course_enrollments e
+       JOIN courses c ON e.course_id = c.id
+       WHERE e.student_id = ? AND e.status != 'Dropped'
+       ORDER BY e.enrollment_date DESC`,
+      [student.id]
+    );
+    res.json({ courses });
+  } catch (e) {
+    console.error('Get students/me/courses error:', e);
+    res.status(500).json({ error: 'Failed to fetch courses' });
+  }
+});
+
+// GET /api/academy/students/me/billing — per-course balances + pending transactions
+router.get('/students/me/billing', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    const balances = await db.all(
+      `SELECT sp.id, sp.course_id, sp.course_fee, sp.amount_paid, sp.balance,
+              c.course_code, c.title
+       FROM student_payments sp
+       JOIN courses c ON sp.course_id = c.id
+       WHERE sp.student_id = ?
+       ORDER BY c.course_code`,
+      [student.id]
+    );
+    const pending = await db.all(
+      `SELECT t.id, t.course_id, t.amount, t.payment_date, t.payment_method, t.payment_reference, t.status, t.created_at,
+              c.course_code, c.title
+       FROM student_payment_transactions t
+       JOIN courses c ON t.course_id = c.id
+       WHERE t.student_id = ? AND t.status = 'Pending'
+       ORDER BY t.created_at DESC`,
+      [student.id]
+    );
+    const transactions = await db.all(
+      `SELECT t.id, t.course_id, t.amount, t.payment_date, t.payment_method, t.payment_reference, t.status, t.created_at, t.admin_notes,
+              c.course_code, c.title
+       FROM student_payment_transactions t
+       JOIN courses c ON t.course_id = c.id
+       WHERE t.student_id = ?
+       ORDER BY t.created_at DESC`,
+      [student.id]
+    );
+    res.json({ balances, pending, transactions });
+  } catch (e) {
+    console.error('Get students/me/billing error:', e);
+    res.status(500).json({ error: 'Failed to fetch billing' });
+  }
+});
+
+// POST /api/academy/students/me/billing/generate-invoice — create invoice snapshot, notify finance
+router.post('/students/me/billing/generate-invoice', authenticateToken, requireRole('Student'), [
+  body('period').optional().trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+
+    const payments = await db.all(
+      `SELECT sp.id, sp.course_id, sp.course_fee, sp.amount_paid, sp.balance
+       FROM student_payments sp WHERE sp.student_id = ?`,
+      [student.id]
+    );
+    if (payments.length === 0) return res.status(400).json({ error: 'No billing records to invoice' });
+
+    const totalFee = payments.reduce((s, p) => s + (parseFloat(p.course_fee) || 0), 0);
+    const totalPaid = payments.reduce((s, p) => s + (parseFloat(p.amount_paid) || 0), 0);
+    const totalBalance = payments.reduce((s, p) => s + (parseFloat(p.balance) || 0), 0);
+
+    const invoiceNumber = 'INV-' + student.student_id + '-' + Date.now();
+    const period = req.body.period || null;
+
+    const invResult = await db.run(
+      `INSERT INTO student_invoices (student_id, invoice_number, period, status, total_fee, total_paid, total_balance, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, 'Sent_to_finance', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [student.id, invoiceNumber, period, totalFee, totalPaid, totalBalance, req.user.id]
+    );
+    const invoiceId = invResult.lastID;
+
+    for (const p of payments) {
+      await db.run(
+        `INSERT INTO student_invoice_items (invoice_id, course_id, course_fee, amount_paid_at_generation, balance_at_generation, created_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        [invoiceId, p.course_id, p.course_fee, p.amount_paid, p.balance]
+      );
+    }
+
+    await logAction(req.user.id, 'generate_student_invoice', 'academy', invoiceId, { invoice_number: invoiceNumber, student_id: student.id }, req);
+
+    const financeIds = await getFinanceAccessUserIds();
+    if (financeIds.length) {
+      try {
+        await sendBulkNotifications(
+          financeIds,
+          'New student invoice',
+          `Invoice ${invoiceNumber} generated for ${student.name || student.email}. Total balance: ${totalBalance}.`,
+          'info',
+          '/student-payments',
+          req.user.id
+        );
+      } catch (notifErr) {
+        console.error('Invoice finance notification error:', notifErr);
+      }
+    }
+
+    res.status(201).json({ message: 'Invoice generated', invoice: { id: invoiceId, invoice_number: invoiceNumber } });
+  } catch (e) {
+    console.error('Generate invoice error:', e);
+    res.status(500).json({ error: 'Failed to generate invoice' });
+  }
+});
+
+// GET /api/academy/students/me/grades — approved grades only
+router.get('/students/me/grades', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    const grades = await db.all(
+      `SELECT g.id, g.course_id, g.proposed_grade as grade, g.approved_at,
+              c.course_code, c.title
+       FROM grade_submissions g
+       JOIN courses c ON g.course_id = c.id
+       WHERE g.student_id = ? AND g.status = 'Approved'
+       ORDER BY g.approved_at DESC`,
+      [student.id]
+    );
+    res.json({ grades });
+  } catch (e) {
+    console.error('Get students/me/grades error:', e);
+    res.status(500).json({ error: 'Failed to fetch grades' });
+  }
+});
+
+// GET /api/academy/students/me/certificates — certificates with safe download URLs
+router.get('/students/me/certificates', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    const certs = await db.all(
+      `SELECT c.id, c.certificate_id, c.course_id, c.issue_date, c.grade, c.verification_code, c.pdf_path,
+              co.course_code, co.title as course_title
+       FROM certificates c
+       JOIN courses co ON c.course_id = co.id
+       WHERE c.student_id = ?
+       ORDER BY c.issue_date DESC`,
+      [student.id]
+    );
+    const withUrls = certs.map((cert) => ({
+      ...cert,
+      download_url: cert.pdf_path
+        ? `/academy/students/me/certificates/${cert.id}/download`
+        : null
+    }));
+    res.json({ certificates: withUrls });
+  } catch (e) {
+    console.error('Get students/me/certificates error:', e);
+    res.status(500).json({ error: 'Failed to fetch certificates' });
+  }
+});
+
+// GET /api/academy/students/me/certificates/:id/download — safe certificate download (own only)
+router.get('/students/me/certificates/:id/download', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+    const cert = await db.get(
+      'SELECT id, pdf_path, student_id FROM certificates WHERE id = ? AND student_id = ?',
+      [req.params.id, student.id]
+    );
+    if (!cert) return res.status(404).json({ error: 'Certificate not found' });
+    if (!cert.pdf_path) return res.status(404).json({ error: 'Certificate file not available' });
+    const path = require('path');
+    const fs = require('fs');
+    const fullPath = path.isAbsolute(cert.pdf_path) ? cert.pdf_path : path.join(process.cwd(), cert.pdf_path);
+    if (!fs.existsSync(fullPath)) return res.status(404).json({ error: 'Certificate file not found' });
+    res.sendFile(fullPath, { headers: { 'Content-Disposition': 'attachment; filename=certificate.pdf' } });
+  } catch (e) {
+    console.error('Certificate download error:', e);
+    res.status(500).json({ error: 'Download failed' });
+  }
+});
 
 // Get all students
 router.get('/students', authenticateToken, async (req, res) => {
@@ -991,6 +1209,25 @@ router.get('/students/:id/enrollments', authenticateToken, async (req, res) => {
   }
 });
 
+// Get enrolled courses (student_course_enrollments) for a student — for grade submission
+router.get('/students/:id/enrolled-courses', authenticateToken, async (req, res) => {
+  try {
+    const studentId = req.params.id;
+    const rows = await db.all(
+      `SELECT e.course_id, c.course_code, c.title, e.status as enrollment_status
+       FROM student_course_enrollments e
+       JOIN courses c ON e.course_id = c.id
+       WHERE e.student_id = ? AND e.status != 'Dropped'
+       ORDER BY c.course_code`,
+      [studentId]
+    );
+    res.json({ courses: rows });
+  } catch (e) {
+    console.error('Get enrolled-courses error:', e);
+    res.status(500).json({ error: 'Failed to fetch enrolled courses' });
+  }
+});
+
 // ========== CERTIFICATES ==========
 
 // Create certificate
@@ -1031,6 +1268,20 @@ router.post('/certificates', authenticateToken, requireRole('Admin', 'Instructor
     );
 
     await logAction(req.user.id, 'create_certificate', 'academy', result.lastID, { certificateId }, req);
+
+    const stu = await db.get('SELECT user_id FROM students WHERE id = ?', [student_id]);
+    if (stu) {
+      try {
+        const crs = await db.get('SELECT course_code, title FROM courses WHERE id = ?', [course_id]);
+        await sendNotificationToUser(stu.user_id, {
+          title: 'Certificate issued',
+          message: `A certificate has been issued for ${crs ? crs.title || crs.course_code : 'your course'}.`,
+          type: 'info',
+          link: '/student/certificates',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Certificate notify student error:', e); }
+    }
 
     res.status(201).json({
       message: 'Certificate created successfully',
@@ -1076,6 +1327,183 @@ router.get('/certificates/verify/:code', async (req, res) => {
   } catch (error) {
     console.error('Verify certificate error:', error);
     res.status(500).json({ error: 'Failed to verify certificate' });
+  }
+});
+
+// ========== GRADES (submit + admin approval) ==========
+
+// POST /api/academy/grades/submit (Instructor + Academy staff)
+router.post('/grades/submit', authenticateToken, [
+  body('student_id').isInt().withMessage('student_id is required'),
+  body('course_id').isInt().withMessage('course_id is required'),
+  body('proposed_grade').trim().notEmpty().withMessage('proposed_grade is required')
+], async (req, res) => {
+  try {
+    const academyStaff = await isAcademyStaff(req.user);
+    if (req.user.role !== 'Instructor' && !academyStaff) {
+      return res.status(403).json({ error: 'Only Instructors and Academy staff can submit grades' });
+    }
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const { student_id, course_id, proposed_grade } = req.body;
+
+    const enroll = await db.get(
+      'SELECT id FROM student_course_enrollments WHERE student_id = ? AND course_id = ? AND status != ?',
+      [student_id, course_id, 'Dropped']
+    );
+    if (!enroll) return res.status(400).json({ error: 'Student is not enrolled in this course' });
+
+    const run = await db.run(
+      `INSERT INTO grade_submissions (student_id, course_id, proposed_grade, status, submitted_by, created_at, updated_at)
+       VALUES (?, ?, ?, 'Pending', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [student_id, course_id, String(proposed_grade).trim(), req.user.id]
+    );
+
+    await logAction(req.user.id, 'submit_grade', 'academy', run.lastID, { student_id, course_id, proposed_grade }, req);
+
+    try {
+      await sendNotificationToRole('Admin', {
+        title: 'New grade submission',
+        message: `Grade "${proposed_grade}" submitted for student/course.`,
+        type: 'info',
+        link: '/academy?grades=pending',
+        senderId: req.user.id
+      });
+    } catch (e) { console.error('Grade submit notify Admin error:', e); }
+
+    res.status(201).json({ message: 'Grade submitted for approval', submission: { id: run.lastID, status: 'Pending' } });
+  } catch (e) {
+    console.error('Grade submit error:', e);
+    res.status(500).json({ error: 'Failed to submit grade' });
+  }
+});
+
+// GET /api/academy/grades/pending (Admin)
+router.get('/grades/pending', authenticateToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const rows = await db.all(
+      `SELECT g.id, g.student_id, g.course_id, g.proposed_grade, g.status, g.submitted_by, g.created_at,
+              s.student_id as student_code, u.name as student_name, u.email as student_email,
+              c.course_code, c.title as course_title,
+              sub.name as submitted_by_name
+       FROM grade_submissions g
+       JOIN students s ON g.student_id = s.id
+       JOIN users u ON s.user_id = u.id
+       JOIN courses c ON g.course_id = c.id
+       LEFT JOIN users sub ON g.submitted_by = sub.id
+       WHERE g.status = 'Pending'
+       ORDER BY g.created_at ASC`
+    );
+    res.json({ pending: rows });
+  } catch (e) {
+    console.error('Grades pending error:', e);
+    res.status(500).json({ error: 'Failed to fetch pending grades' });
+  }
+});
+
+// PUT /api/academy/grades/:id/approve (Admin)
+router.put('/grades/:id/approve', authenticateToken, requireRole('Admin'), [
+  body('notes').optional().trim()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const id = req.params.id;
+    const notes = req.body.notes || null;
+
+    const g = await db.get('SELECT id, student_id, course_id, proposed_grade, status, submitted_by FROM grade_submissions WHERE id = ?', [id]);
+    if (!g) return res.status(404).json({ error: 'Grade submission not found' });
+    if (g.status !== 'Pending') return res.status(400).json({ error: 'Submission is not pending' });
+
+    await db.run(
+      `UPDATE grade_submissions SET status = 'Approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [req.user.id, notes, id]
+    );
+
+    const gradeVal = g.proposed_grade;
+    const enrollExists = await db.get('SELECT 1 FROM enrollments WHERE student_id = ? AND course_id = ?', [g.student_id, g.course_id]);
+    if (!enrollExists) {
+      await db.run(
+        `INSERT INTO enrollments (student_id, course_id, enrollment_date, status, grade, completion_date) VALUES (?, ?, CURRENT_DATE, 'Completed', ?, CURRENT_DATE)`,
+        [g.student_id, g.course_id, gradeVal]
+      );
+    } else {
+      await db.run(
+        `UPDATE enrollments SET grade = ?, status = 'Completed', completion_date = CURRENT_DATE WHERE student_id = ? AND course_id = ?`,
+        [gradeVal, g.student_id, g.course_id]
+      );
+    }
+
+    const student = await db.get('SELECT user_id FROM students WHERE id = ?', [g.student_id]);
+    if (student) {
+      try {
+        const c = await db.get('SELECT course_code, title FROM courses WHERE id = ?', [g.course_id]);
+        await sendNotificationToUser(student.user_id, {
+          title: 'Grade approved',
+          message: `Your grade ${gradeVal} for ${c ? c.title || c.course_code : 'course'} has been approved.`,
+          type: 'info',
+          link: '/student/grades',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Grade approve notify student error:', e); }
+    }
+
+    await logAction(req.user.id, 'approve_grade', 'academy', id, { proposed_grade: gradeVal }, req);
+    res.json({ message: 'Grade approved', submission: { id: parseInt(id, 10), status: 'Approved' } });
+  } catch (e) {
+    console.error('Grade approve error:', e);
+    res.status(500).json({ error: 'Failed to approve grade' });
+  }
+});
+
+// PUT /api/academy/grades/:id/reject (Admin)
+router.put('/grades/:id/reject', authenticateToken, requireRole('Admin'), [
+  body('notes').optional().trim()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const id = req.params.id;
+    const notes = req.body.notes || null;
+
+    const g = await db.get('SELECT id, student_id, course_id, proposed_grade, status, submitted_by FROM grade_submissions WHERE id = ?', [id]);
+    if (!g) return res.status(404).json({ error: 'Grade submission not found' });
+    if (g.status !== 'Pending') return res.status(400).json({ error: 'Submission is not pending' });
+
+    await db.run(
+      `UPDATE grade_submissions SET status = 'Rejected', approved_by = ?, approved_at = CURRENT_TIMESTAMP, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [req.user.id, notes, id]
+    );
+
+    const student = await db.get('SELECT user_id FROM students WHERE id = ?', [g.student_id]);
+    if (student) {
+      try {
+        await sendNotificationToUser(student.user_id, {
+          title: 'Grade rejected',
+          message: `Your grade submission was rejected. ${notes ? `Reason: ${notes}` : ''}`,
+          type: 'warning',
+          link: '/student/grades',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Grade reject notify student error:', e); }
+    }
+    if (g.submitted_by) {
+      try {
+        await sendNotificationToUser(g.submitted_by, {
+          title: 'Grade submission rejected',
+          message: `Your grade submission was rejected. ${notes ? `Reason: ${notes}` : ''}`,
+          type: 'warning',
+          link: '/academy',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Grade reject notify submitter error:', e); }
+    }
+
+    await logAction(req.user.id, 'reject_grade', 'academy', id, {}, req);
+    res.json({ message: 'Grade rejected', submission: { id: parseInt(id, 10), status: 'Rejected' } });
+  } catch (e) {
+    console.error('Grade reject error:', e);
+    res.status(500).json({ error: 'Failed to reject grade' });
   }
 });
 

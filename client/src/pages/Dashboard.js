@@ -132,6 +132,12 @@ const Dashboard = () => {
   if (user?.role === 'Staff') {
     return <Navigate to="/staff-dashboard" replace />;
   }
+  if (user?.role === 'Student') {
+    return <Navigate to="/student" replace />;
+  }
+  if (user?.role === 'Instructor') {
+    return <Navigate to="/academy" replace />;
+  }
 
   const handleSearch = async (e) => {
     e.preventDefault();

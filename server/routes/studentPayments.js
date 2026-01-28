@@ -2,8 +2,9 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticateToken, requireStudentPaymentAccess } = require('../utils/auth');
+const { authenticateToken, requireRole, requireStudentPaymentAccess, getFinanceAccessUserIds } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
+const { sendBulkNotifications, sendNotificationToUser } = require('../utils/notifications');
 
 // Get all student payments (Finance head, Assistant Finance, Academy head, Academy staff)
 router.get('/', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
@@ -30,6 +31,188 @@ router.get('/', authenticateToken, requireStudentPaymentAccess(), async (req, re
   } catch (error) {
     console.error('Get student payments error:', error);
     res.status(500).json({ error: 'Failed to fetch student payments' });
+  }
+});
+
+// ----- Student payment request + finance approval -----
+
+// POST /api/student-payments/request-payment (Student)
+router.post('/request-payment', authenticateToken, requireRole('Student'), [
+  body('course_id').isInt().withMessage('Course ID is required'),
+  body('amount').isFloat({ min: 0.01 }).withMessage('Amount must be greater than 0'),
+  body('payment_date').optional().isISO8601(),
+  body('payment_method').optional().trim(),
+  body('payment_reference').optional().trim(),
+  body('proof_attachment').optional().trim(),
+  body('notes').optional().trim()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const { course_id, amount, payment_date, payment_method, payment_reference, proof_attachment, notes } = req.body;
+
+    const student = await db.get(
+      'SELECT s.id, s.user_id, s.student_id FROM students s WHERE s.user_id = ? AND s.approved = 1',
+      [req.user.id]
+    );
+    if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
+
+    const sp = await db.get(
+      'SELECT id FROM student_payments WHERE student_id = ? AND course_id = ?',
+      [student.id, course_id]
+    );
+    if (!sp) return res.status(400).json({ error: 'No billing record for this course' });
+
+    const amt = parseFloat(amount);
+    const payRec = await db.get(
+      'SELECT balance FROM student_payments WHERE id = ?',
+      [sp.id]
+    );
+    if (amt > (parseFloat(payRec.balance) || 0)) return res.status(400).json({ error: 'Amount exceeds balance' });
+
+    const pd = payment_date || new Date().toISOString().split('T')[0];
+    const run = await db.run(
+      `INSERT INTO student_payment_transactions
+       (student_payment_id, student_id, course_id, amount, payment_date, payment_method, payment_reference, proof_attachment, notes, status, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [sp.id, student.id, course_id, amt, pd, payment_method || null, payment_reference || null, proof_attachment || null, notes || null, req.user.id]
+    );
+
+    await logAction(req.user.id, 'request_payment', 'student_payments', run.lastID, { course_id, amount: amt }, req);
+
+    const financeIds = await getFinanceAccessUserIds();
+    if (financeIds.length) {
+      try {
+        await sendBulkNotifications(
+          financeIds,
+          'New payment request',
+          `Student ${student.student_id} requested payment of ${amt} for course.`,
+          'info',
+          '/student-payments',
+          req.user.id
+        );
+      } catch (e) { console.error('Request-payment notify error:', e); }
+    }
+
+    res.status(201).json({ message: 'Payment request submitted', transaction: { id: run.lastID, status: 'Pending' } });
+  } catch (e) {
+    console.error('Request payment error:', e);
+    res.status(500).json({ error: 'Failed to submit payment request' });
+  }
+});
+
+// GET /api/student-payments/pending (Finance/Admin)
+router.get('/pending', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
+  try {
+    const rows = await db.all(
+      `SELECT t.id, t.student_payment_id, t.student_id, t.course_id, t.amount, t.payment_date, t.payment_method, t.payment_reference, t.proof_attachment, t.notes, t.status, t.created_by, t.created_at,
+              s.student_id as student_code, u.name as student_name, u.email as student_email,
+              c.course_code, c.title as course_title
+       FROM student_payment_transactions t
+       JOIN students s ON t.student_id = s.id
+       JOIN users u ON s.user_id = u.id
+       JOIN courses c ON t.course_id = c.id
+       WHERE t.status = 'Pending'
+       ORDER BY t.created_at ASC`
+    );
+    res.json({ pending: rows });
+  } catch (e) {
+    console.error('Get pending payments error:', e);
+    res.status(500).json({ error: 'Failed to fetch pending payments' });
+  }
+});
+
+// PUT /api/student-payments/transactions/:id/approve (Finance/Admin)
+router.put('/transactions/:id/approve', authenticateToken, requireStudentPaymentAccess(), [
+  body('admin_notes').optional().trim()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const id = req.params.id;
+    const admin_notes = req.body.admin_notes || null;
+
+    const t = await db.get(
+      'SELECT id, student_payment_id, student_id, course_id, amount, status FROM student_payment_transactions WHERE id = ?',
+      [id]
+    );
+    if (!t) return res.status(404).json({ error: 'Transaction not found' });
+    if (t.status !== 'Pending') return res.status(400).json({ error: 'Transaction is not pending' });
+
+    const sp = await db.get('SELECT id, amount_paid, balance, course_fee FROM student_payments WHERE id = ?', [t.student_payment_id]);
+    if (!sp) return res.status(404).json({ error: 'Payment record not found' });
+
+    const newPaid = (parseFloat(sp.amount_paid) || 0) + (parseFloat(t.amount) || 0);
+    const fee = parseFloat(sp.course_fee) || 0;
+    const newBal = Math.max(0, fee - newPaid);
+
+    await db.run(
+      'UPDATE student_payments SET amount_paid = ?, balance = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [newPaid, newBal, sp.id]
+    );
+    await db.run(
+      `UPDATE student_payment_transactions SET status = 'Approved', approved_by = ?, approved_at = CURRENT_TIMESTAMP, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [req.user.id, admin_notes, id]
+    );
+
+    const student = await db.get('SELECT user_id FROM students WHERE id = ?', [t.student_id]);
+    if (student) {
+      try {
+        await sendNotificationToUser(student.user_id, {
+          title: 'Payment approved',
+          message: `Your payment of ${t.amount} has been approved.`,
+          type: 'info',
+          link: '/student/billing',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Approve notify student error:', e); }
+    }
+
+    await logAction(req.user.id, 'approve_payment_transaction', 'student_payments', id, { amount: t.amount }, req);
+    res.json({ message: 'Payment approved', transaction: { id: parseInt(id, 10), status: 'Approved' } });
+  } catch (e) {
+    console.error('Approve transaction error:', e);
+    res.status(500).json({ error: 'Failed to approve payment' });
+  }
+});
+
+// PUT /api/student-payments/transactions/:id/reject (Finance/Admin)
+router.put('/transactions/:id/reject', authenticateToken, requireStudentPaymentAccess(), [
+  body('admin_notes').optional().trim()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const id = req.params.id;
+    const admin_notes = req.body.admin_notes || null;
+
+    const t = await db.get('SELECT id, student_id, amount, status FROM student_payment_transactions WHERE id = ?', [id]);
+    if (!t) return res.status(404).json({ error: 'Transaction not found' });
+    if (t.status !== 'Pending') return res.status(400).json({ error: 'Transaction is not pending' });
+
+    await db.run(
+      `UPDATE student_payment_transactions SET status = 'Rejected', approved_by = ?, approved_at = CURRENT_TIMESTAMP, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [req.user.id, admin_notes, id]
+    );
+
+    const student = await db.get('SELECT user_id FROM students WHERE id = ?', [t.student_id]);
+    if (student) {
+      try {
+        await sendNotificationToUser(student.user_id, {
+          title: 'Payment rejected',
+          message: `Your payment request of ${t.amount} was rejected. ${admin_notes ? `Reason: ${admin_notes}` : ''}`,
+          type: 'warning',
+          link: '/student/billing',
+          senderId: req.user.id
+        });
+      } catch (e) { console.error('Reject notify student error:', e); }
+    }
+
+    await logAction(req.user.id, 'reject_payment_transaction', 'student_payments', id, {}, req);
+    res.json({ message: 'Payment rejected', transaction: { id: parseInt(id, 10), status: 'Rejected' } });
+  } catch (e) {
+    console.error('Reject transaction error:', e);
+    res.status(500).json({ error: 'Failed to reject payment' });
   }
 });
 
