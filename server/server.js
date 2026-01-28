@@ -2469,7 +2469,8 @@ async function startServer() {
     // Start periodic database checkpointing for data persistence
     startPeriodicCheckpoint();
     
-    const host = process.env.HOST || '127.0.0.1';
+    // Bind 0.0.0.0 so Render/cloud health checks can reach the app. Use HOST=127.0.0.1 locally if needed.
+    const host = process.env.HOST || '0.0.0.0';
     server.listen(PORT, host, () => {
       console.log(`Server running on ${host}:${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -68,9 +68,11 @@ router.post('/login', [
 
     console.log('User found:', { id: user.id, email: user.email, role: user.role, is_active: user.is_active });
 
-    // Allow Admin, DepartmentHead, Staff, Student, and Instructor to log in
+    // Allow Admin, DepartmentHead, Staff, Student, and Instructor to log in (case-insensitive)
     const allowedRoles = ['Admin', 'DepartmentHead', 'Staff', 'Student', 'Instructor'];
-    if (!allowedRoles.includes(user.role)) {
+    const roleNorm = (user.role || '').trim();
+    const canonicalRole = allowedRoles.find(r => r.toLowerCase() === roleNorm.toLowerCase());
+    if (!canonicalRole) {
       console.log('Login denied - role not allowed:', user.role);
       return res.status(403).json({ error: 'Login access restricted. Contact administrator.' });
     }
@@ -111,8 +113,8 @@ router.post('/login', [
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // Generate token
-    const token = generateToken(user);
+    // Generate token with canonical role so route guards work correctly
+    const token = generateToken({ ...user, role: canonicalRole });
     console.log('Login successful for user:', user.id);
 
     // Log action asynchronously (don't block login response)
@@ -124,7 +126,7 @@ router.post('/login', [
       id: user.id,
       email: user.email,
       username: user.username,
-      role: user.role,
+      role: canonicalRole,
       name: user.name,
       phone: user.phone || null,
       profile_image: user.profile_image || null,
@@ -168,6 +170,10 @@ router.get('/me', authenticateToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    const canonicalRoles = { admin: 'Admin', departmenthead: 'DepartmentHead', staff: 'Staff', student: 'Student', instructor: 'Instructor' };
+    const rk = (user.role || '').trim().toLowerCase();
+    if (canonicalRoles[rk]) user.role = canonicalRoles[rk];
 
     // For Staff users, get department and position from staff table
     if (user.role === 'Staff') {
