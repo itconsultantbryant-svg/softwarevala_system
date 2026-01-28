@@ -111,17 +111,16 @@ const StaffForm = ({ staff, onClose }) => {
     }
 
     setUploadingImage(true);
+    setError('');
     try {
-      const formDataObj = new FormData();
-      formDataObj.append('image', file);
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('type', 'staff');
 
-      const response = await api.post('/upload/profile-image', formDataObj, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      const response = await api.post('/upload/entity-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      // Store relative URL - backend will handle full URL construction
       const imageUrl = response.data.imageUrl;
       setFormData(prev => ({ ...prev, profile_image: imageUrl }));
     } catch (err) {

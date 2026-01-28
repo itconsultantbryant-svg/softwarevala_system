@@ -40,6 +40,7 @@ import AssetRegistry from './pages/finance/AssetRegistry';
 import MyReportsHistory from './pages/reports/MyReportsHistory';
 import FinanceRoute from './components/FinanceRoute';
 import StaffRoute from './components/StaffRoute';
+import StudentPaymentRoute from './components/StudentPaymentRoute';
 import CallMemoHistory from './pages/callMemos/CallMemoHistory';
 import ProposalHistory from './pages/proposals/ProposalHistory';
 import MeetingHistory from './pages/meetings/MeetingHistory';
@@ -124,7 +125,7 @@ function App() {
                           <Route path="/student/grades" element={<StudentGrades />} />
                           <Route path="/student/certificates" element={<StudentCertificates />} />
                           <Route path="/student/billing" element={<StudentBilling />} />
-                          <Route path="student-payments" element={<StudentPaymentManagement />} />
+                          <Route path="student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </div>

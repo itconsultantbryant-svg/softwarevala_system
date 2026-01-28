@@ -50,20 +50,18 @@ const UserForm = ({ user, onClose }) => {
     }
 
     setUploadingImage(true);
+    setError('');
     try {
-      const formDataObj = new FormData();
-      formDataObj.append('image', file);
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('type', 'user');
 
-      const response = await api.post('/upload/profile-image', formDataObj, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      const response = await api.post('/upload/entity-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
 
       const imageUrl = response.data.imageUrl;
-      // Use centralized URL utility for consistency
-      const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : normalizeUrl(imageUrl);
-      setFormData(prev => ({ ...prev, profile_image: fullImageUrl }));
+      setFormData(prev => ({ ...prev, profile_image: imageUrl }));
     } catch (err) {
       setError('Failed to upload image: ' + (err.response?.data?.error || err.message));
     } finally {
@@ -121,7 +119,7 @@ const UserForm = ({ user, onClose }) => {
                   <label className="form-label">Profile Image</label>
                   <div className="mb-2">
                     {formData.profile_image && (
-                      <img src={formData.profile_image} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '50%' }} />
+                      <img src={formData.profile_image.startsWith('http') ? formData.profile_image : normalizeUrl(formData.profile_image)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '50%' }} />
                     )}
                   </div>
                   <input type="file" className="form-control" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />

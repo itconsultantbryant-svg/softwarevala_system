@@ -60,21 +60,18 @@ const InstructorForm = ({ instructor, courses, onClose }) => {
     }
 
     setUploadingImage(true);
+    setError('');
     try {
-      const formData = new FormData();
-      formData.append('image', file);
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('type', 'instructor');
 
-      const response = await api.post('/upload/profile-image', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      const response = await api.post('/upload/entity-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
 
-      // Construct full URL if needed
       const imageUrl = response.data.imageUrl;
-      // If it's a relative URL, prepend the backend base URL
-      const fullImageUrl = imageUrl.startsWith('http') ? imageUrl : normalizeUrl(imageUrl);
-      setFormData(prev => ({ ...prev, profile_image: fullImageUrl }));
+      setFormData(prev => ({ ...prev, profile_image: imageUrl }));
     } catch (err) {
       setError('Failed to upload image: ' + (err.response?.data?.error || err.message));
     } finally {
@@ -141,7 +138,7 @@ const InstructorForm = ({ instructor, courses, onClose }) => {
                   <label className="form-label">Profile Image</label>
                   <div className="mb-2">
                     {formData.profile_image && (
-                      <img src={formData.profile_image} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '50%' }} />
+                      <img src={formData.profile_image.startsWith('http') ? formData.profile_image : normalizeUrl(formData.profile_image)} alt="Profile" style={{ width: '100px', height: '100px', objectFit: 'cover', borderRadius: '50%' }} />
                     )}
                   </div>
                   <input type="file" className="form-control" accept="image/*" onChange={handleImageUpload} disabled={uploadingImage} />

@@ -1,10 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../config/api';
 import { normalizeUrl } from '../../utils/apiUrl';
-import db from '../../database/db';
 
 const StudentForm = ({ student, onClose }) => {
-  console.log(student);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -45,7 +43,7 @@ const StudentForm = ({ student, onClose }) => {
         ...student,
         enrollment_date: student.enrollment_date ? new Date(student.enrollment_date).toISOString().split('T')[0] : '',
         courses_enrolled: student.courses_enrolled ? (typeof student.courses_enrolled === 'string' ? JSON.parse(student.courses_enrolled) : student.courses_enrolled) : [],
-        profile_image: student.profile_image ? normalizeUrl(student.profile_image) : null,
+        profile_image: student.profile_image || null,
         password: ''
       });
     }
@@ -53,18 +51,49 @@ const StudentForm = ({ student, onClose }) => {
   }, [student]);
 
   const fetchCourses = async () => {
-    const res = await db.query('SELECT * FROM courses');
-    setCourses(res || []);
+    try {
+      const res = await api.get('/academy/courses');
+      setCourses(res.data?.courses || []);
+    } catch (err) {
+      console.error('Failed to fetch courses:', err);
+      setCourses([]);
+    }
   };
 
   const fetchCohorts = async () => {
-    const res = await db.query('SELECT * FROM cohorts WHERE status = ?', ['Active']);
-    setCohorts(res || []);
+    try {
+      const res = await api.get('/academy/cohorts', { params: { status: 'Active' } });
+      setCohorts(res.data?.cohorts || []);
+    } catch (err) {
+      console.error('Failed to fetch cohorts:', err);
+      setCohorts([]);
+    }
   };
 
-  /* =========================
-     FORM HANDLERS
-  ========================= */
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image must be less than 5MB');
+      return;
+    }
+    setUploadingImage(true);
+    setError('');
+    try {
+      const fd = new FormData();
+      fd.append('image', file);
+      fd.append('type', 'student');
+
+      const res = await api.post('/upload/entity-image', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      setFormData(prev => ({ ...prev, profile_image: res.data.imageUrl }));
+    } catch (err) {
+      setError('Failed to upload image: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -83,39 +112,6 @@ const StudentForm = ({ student, onClose }) => {
   };
 
   /* =========================
-     STUDENT IMAGE UPLOAD (FIXED)
-  ========================= */
-
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Image must be less than 5MB');
-      return;
-    }
-
-    setUploadingImage(true);
-    setError('');
-
-    try {
-      const fd = new FormData();
-      fd.append('image', file);
-
-      const res = await db.query('INSERT INTO student_images (student_id, image_url) VALUES (?, ?)', [formData.id, file.path]);
-      if (res.affectedRows > 0) {
-        setFormData(prev => ({ ...prev, profile_image: file.path }));
-      } else {
-        setError('Image upload failed');
-      }
-    } catch (err) {
-      setError('Image upload failed: ' + err.message);
-    } finally {
-      setUploadingImage(false);
-    }
-  };
-
-  /* =========================
      SUBMIT
   ========================= */
 
@@ -126,22 +122,30 @@ const StudentForm = ({ student, onClose }) => {
 
     try {
       const payload = {
-        ...formData,
-        courses_enrolled: formData.courses_enrolled,
+        name: formData.name,
+        email: formData.email,
+        username: formData.username || undefined,
+        phone: formData.phone || undefined,
+        enrollment_date: formData.enrollment_date || undefined,
+        status: formData.status || 'Active',
+        profile_image: formData.profile_image || undefined,
         cohort_id: formData.cohort_id || null,
         period: formData.period || null,
-        password: formData.password || null
+        courses_enrolled: Array.isArray(formData.courses_enrolled) ? formData.courses_enrolled : [],
       };
+      if (!student) {
+        payload.password = formData.password || 'Student@123';
+      }
 
       if (student) {
-        await db.query('UPDATE students SET ? WHERE id = ?', [payload, student.id]);
+        await api.put(`/academy/students/${student.id}`, payload);
       } else {
-        await db.query('INSERT INTO students SET ?', [payload]);
+        await api.post('/academy/students', payload);
       }
 
       onClose();
     } catch (err) {
-      setError('Failed to save student: ' + err.message);
+      setError(err.response?.data?.error || 'Failed to save student');
     } finally {
       setLoading(false);
     }
@@ -167,15 +171,13 @@ const StudentForm = ({ student, onClose }) => {
             <div className="mb-3">
               <label className="form-label">Student Profile Image</label>
               <div className="mb-2">
-                {formData.profile_image && formData.profile_image.trim() !== '' ?  (
+                {formData.profile_image && formData.profile_image.trim() !== '' ? (
                   <img
                     src={formData.profile_image.startsWith('http') ? formData.profile_image : normalizeUrl(formData.profile_image)}
                     alt={formData.name || 'Student'}
                     className="img-fluid rounded-circle mb-2"
                     style={{ width: '100px', height: '100px', borderRadius: '50%', objectFit: 'cover', border: '3px solid #dee2e6' }}
-                    onError={(e) => {
-                      e.target.style.display = 'none';
-                    }}
+                    onError={(e) => { e.target.style.display = 'none'; }}
                   />
                 ) : (
                   <div className="bg-secondary rounded-circle d-inline-flex align-items-center justify-content-center"

@@ -1,6 +1,6 @@
 // src/pages/StudentGrades.js
 import React, { useState, useEffect } from 'react';
-import api from '../config/api'; // Make sure your API config is correct
+import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { isAcademyStaff as isAcademyStaffUtils } from '../../utils/academyUtils';
 import { useNavigate } from 'react-router-dom';

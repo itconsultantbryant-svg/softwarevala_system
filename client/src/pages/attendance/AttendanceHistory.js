@@ -22,16 +22,22 @@ const AttendanceHistory = () => {
     dateTo: '',
     status: ''
   });
+  const getDefaultWeekStart = () => {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay());
+    return d.toISOString().split('T')[0];
+  };
+
   const [adminFilter, setAdminFilter] = useState({
     user_id: '',
-    week_start: '',
+    week_start: getDefaultWeekStart(),
     date: '',
     month: '',
     year: new Date().getFullYear()
   });
   const [approvingId, setApprovingId] = useState(null);
   const [approvalNotes, setApprovalNotes] = useState('');
-  const [viewMode, setViewMode] = useState('standard'); // 'standard' or 'admin'
+  const [viewMode, setViewMode] = useState('admin'); // Admin defaults to admin view to see staff/dept head attendance
 
   useEffect(() => {
     if (user?.role === 'Admin') {

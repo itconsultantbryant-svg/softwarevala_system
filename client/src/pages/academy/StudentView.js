@@ -1,18 +1,58 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../config/api';
-import db from '../../database/db';
+import { normalizeUrl } from '../../utils/apiUrl';
 
 const StudentView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [student, setStudent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    db.get(`SELECT * FROM students WHERE id = ?`, [id])
-      .then(res => setStudent(res))
-      .catch(err => console.error('Error fetching student:', err));
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.get(`/academy/students/${id}`)
+      .then((res) => {
+        if (!cancelled) setStudent(res.data.student);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.response?.data?.error || 'Failed to load student');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [id]);
+
+  if (loading) {
+    return (
+      <div className="container-fluid">
+        <div className="d-flex justify-content-center py-5">
+          <div className="spinner-border text-primary" role="status">
+            <span className="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !student) {
+    return (
+      <div className="container-fluid">
+        <button className="btn btn-outline-secondary mb-3" onClick={() => navigate('/academy')}>
+          ← Back
+        </button>
+        <div className="alert alert-danger">{error || 'Student not found'}</div>
+      </div>
+    );
+  }
+
+  const imgSrc = student.profile_image && student.profile_image.trim() !== ''
+    ? (student.profile_image.startsWith('http') ? student.profile_image : normalizeUrl(student.profile_image))
+    : null;
 
   return (
     <div className="container-fluid">
@@ -22,15 +62,13 @@ const StudentView = () => {
 
       <div className="card">
         <div className="card-body text-center">
-          {student.profile_image && student.profile_image.trim() !== '' ? (
+          {imgSrc ? (
             <img
-              src={student.profile_image.startsWith('http') ? student.profile_image : normalizeUrl(student.profile_image)}
+              src={imgSrc}
               alt={student.name}
               className="img-fluid rounded-circle mb-3"
               style={{ width: '150px', height: '150px', objectFit: 'cover' }}
-              onError={(e) => {
-                e.target.style.display = 'none';
-              }}
+              onError={(e) => { e.target.style.display = 'none'; }}
             />
           ) : (
             <div className="bg-secondary rounded-circle d-inline-flex align-items-center justify-content-center"

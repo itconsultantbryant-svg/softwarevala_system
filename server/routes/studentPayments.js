@@ -2,11 +2,11 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
-const { authenticateToken, requireRole } = require('../utils/auth');
+const { authenticateToken, requireStudentPaymentAccess } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
 
-// Get all student payments (Finance Head, Academy Head, Admin)
-router.get('/', authenticateToken, requireRole('Admin', 'DepartmentHead'), async (req, res) => {
+// Get all student payments (Finance head, Assistant Finance, Academy head, Academy staff)
+router.get('/', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
   try {
     let query = `
       SELECT sp.*,
@@ -23,21 +23,6 @@ router.get('/', authenticateToken, requireRole('Admin', 'DepartmentHead'), async
     `;
     const params = [];
 
-    // Finance or Academy Department Head can see all student payments
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      const isFinanceHead = dept && dept.name.toLowerCase().includes('finance');
-      const isAcademyHead = dept && (dept.name.toLowerCase().includes('academy') || dept.name.toLowerCase().includes('elearning'));
-      const isExplicitAcademyHead = req.user.email.toLowerCase() === 'fwallace@prinstinegroup.org';
-      
-      if (!isFinanceHead && !isAcademyHead && !isExplicitAcademyHead) {
-        return res.status(403).json({ error: 'Only Finance or Academy Department Heads can view student payments' });
-      }
-    }
-
     query += ' ORDER BY sp.created_at DESC';
 
     const payments = await db.all(query, params);
@@ -49,24 +34,9 @@ router.get('/', authenticateToken, requireRole('Admin', 'DepartmentHead'), async
 });
 
 // Get enrolled courses for a student (for payment form) - MUST be before /student/:studentId
-router.get('/student/:studentId/enrolled-courses', authenticateToken, requireRole('Admin', 'DepartmentHead'), async (req, res) => {
+router.get('/student/:studentId/enrolled-courses', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
   try {
     const { studentId } = req.params;
-
-    // Finance or Academy Department Head check
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      const isFinanceHead = dept && dept.name.toLowerCase().includes('finance');
-      const isAcademyHead = dept && (dept.name.toLowerCase().includes('academy') || dept.name.toLowerCase().includes('elearning'));
-      const isExplicitAcademyHead = req.user.email.toLowerCase() === 'fwallace@prinstinegroup.org';
-      
-      if (!isFinanceHead && !isAcademyHead && !isExplicitAcademyHead) {
-        return res.status(403).json({ error: 'Only Finance or Academy Department Heads can view student courses' });
-      }
-    }
 
     // Get enrolled courses from student_course_enrollments
     let enrolledCourses = await db.all(
@@ -129,24 +99,9 @@ router.get('/student/:studentId/enrolled-courses', authenticateToken, requireRol
 });
 
 // Get student payment summary (all payments for a student)
-router.get('/student/:studentId', authenticateToken, requireRole('Admin', 'DepartmentHead'), async (req, res) => {
+router.get('/student/:studentId', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
   try {
     const { studentId } = req.params;
-
-    // Finance or Academy Department Head check
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      const isFinanceHead = dept && dept.name.toLowerCase().includes('finance');
-      const isAcademyHead = dept && (dept.name.toLowerCase().includes('academy') || dept.name.toLowerCase().includes('elearning'));
-      const isExplicitAcademyHead = req.user.email.toLowerCase() === 'fwallace@prinstinegroup.org';
-      
-      if (!isFinanceHead && !isAcademyHead && !isExplicitAcademyHead) {
-        return res.status(403).json({ error: 'Only Finance or Academy Department Heads can view student payments' });
-      }
-    }
 
     const payments = await db.all(
       `SELECT sp.*,
@@ -195,24 +150,9 @@ router.get('/student/:studentId', authenticateToken, requireRole('Admin', 'Depar
   }
 });
 
-// Get all students with payment summary (Finance Head, Academy Head, Admin)
-router.get('/students', authenticateToken, requireRole('Admin', 'DepartmentHead'), async (req, res) => {
+// Get all students with payment summary (Finance head, Assistant Finance, Academy head, Academy staff)
+router.get('/students', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
   try {
-    // Check if user is Finance or Academy Department Head
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      const isFinanceHead = dept && dept.name.toLowerCase().includes('finance');
-      const isAcademyHead = dept && (dept.name.toLowerCase().includes('academy') || dept.name.toLowerCase().includes('elearning'));
-      const isExplicitAcademyHead = req.user.email.toLowerCase() === 'fwallace@prinstinegroup.org';
-      
-      if (!isFinanceHead && !isAcademyHead && !isExplicitAcademyHead) {
-        return res.status(403).json({ error: 'Only Finance or Academy Department Heads can view student payments' });
-      }
-    }
-
     const students = await db.all(
       `SELECT s.*, u.name, u.email, u.phone, u.profile_image
        FROM students s
@@ -254,7 +194,7 @@ router.get('/students', authenticateToken, requireRole('Admin', 'DepartmentHead'
 });
 
 // Add payment to student (Finance Head, Admin)
-router.post('/add-payment', authenticateToken, requireRole('Admin', 'DepartmentHead'), [
+router.post('/add-payment', authenticateToken, requireStudentPaymentAccess(), [
   body('student_id').isInt().withMessage('Student ID is required'),
   body('course_id').isInt().withMessage('Course ID is required'),
   body('amount').isFloat({ min: 0.01 }).withMessage('Payment amount must be greater than 0'),
@@ -267,21 +207,6 @@ router.post('/add-payment', authenticateToken, requireRole('Admin', 'DepartmentH
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
-    }
-
-    // Finance or Academy Department Head check
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      const isFinanceHead = dept && dept.name.toLowerCase().includes('finance');
-      const isAcademyHead = dept && (dept.name.toLowerCase().includes('academy') || dept.name.toLowerCase().includes('elearning'));
-      const isExplicitAcademyHead = req.user.email.toLowerCase() === 'fwallace@prinstinegroup.org';
-      
-      if (!isFinanceHead && !isAcademyHead && !isExplicitAcademyHead) {
-        return res.status(403).json({ error: 'Only Finance or Academy Department Heads can add payments' });
-      }
     }
 
     const { student_id, course_id, amount, payment_date, payment_method, payment_reference, notes } = req.body;
@@ -374,20 +299,9 @@ router.post('/add-payment', authenticateToken, requireRole('Admin', 'DepartmentH
 });
 
 // Get single payment record
-router.get('/:id', authenticateToken, requireRole('Admin', 'DepartmentHead'), async (req, res) => {
+router.get('/:id', authenticateToken, requireStudentPaymentAccess(), async (req, res) => {
   try {
     const { id } = req.params;
-
-    // Finance Department Head check
-    if (req.user.role === 'DepartmentHead') {
-      const dept = await db.get(
-        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-        [req.user.id, req.user.email.toLowerCase().trim()]
-      );
-      if (!(dept && dept.name.toLowerCase().includes('finance'))) {
-        return res.status(403).json({ error: 'Only Finance Department Heads can view student payments' });
-      }
-    }
 
     const payment = await db.get(
       `SELECT sp.*,

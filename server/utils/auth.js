@@ -83,6 +83,8 @@ function requireRole(...allowedRoles) {
   };
 }
 
+const HR_OFFICER_EMAILS = ['samantha@prinstinegroup.org'];
+
 /**
  * Middleware: Allow Admin, HumanResourcesDepartmentHead, or HR Officer by email (samantha@prinstinegroup.org)
  */
@@ -90,9 +92,10 @@ function requireStaffManagement(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  const email = (req.user.email || '').toLowerCase().trim();
-  const allowed = ['Admin', 'HumanResourcesDepartmentHead'].includes(req.user.role) ||
-    email === 'samantha@prinstinegroup.org';
+  const email = ((req.user.email ?? '') + '').toLowerCase().trim();
+  const allowed =
+    ['Admin', 'HumanResourcesDepartmentHead'].includes(req.user.role) ||
+    HR_OFFICER_EMAILS.includes(email);
   if (!allowed) {
     return res.status(403).json({ error: 'Insufficient permissions for staff management' });
   }
@@ -130,6 +133,35 @@ function requirePermission(module, action) {
   };
 }
 
+const STUDENT_PAYMENT_EMAILS = ['sean@prinstinegroup.org', 'cvulue@prinstinegroup.org'];
+
+/**
+ * Middleware: Allow Student Payments only for Finance head, Assistant Finance (Sean),
+ * Academy head, Academy staff (cvulue@). Admin always allowed.
+ */
+function requireStudentPaymentAccess() {
+  return async (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const email = ((req.user.email ?? '') + '').toLowerCase().trim();
+    if (req.user.role === 'Admin') return next();
+    if (STUDENT_PAYMENT_EMAILS.includes(email)) return next();
+    if (req.user.role === 'DepartmentHead') {
+      const db = require('../config/database');
+      const dept = await db.get(
+        'SELECT id, name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
+        [req.user.id, email]
+      );
+      if (dept && dept.name) {
+        const n = dept.name.toLowerCase();
+        if (n.includes('finance') || n.includes('academy') || n.includes('elearning')) return next();
+      }
+    }
+    return res.status(403).json({ error: 'Only Finance head, Assistant Finance Officer, Academy head, or Academy staff can access student payments' });
+  };
+}
+
 module.exports = {
   hashPassword,
   comparePassword,
@@ -138,6 +170,7 @@ module.exports = {
   authenticateToken,
   requireRole,
   requireStaffManagement,
+  requireStudentPaymentAccess,
   checkPermission,
   requirePermission
 };

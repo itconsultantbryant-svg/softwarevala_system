@@ -12,8 +12,8 @@ function generateStaffId() {
   return 'STF-' + Date.now().toString().slice(-8) + '-' + crypto.randomBytes(2).toString('hex').toUpperCase();
 }
 
-const HR_OFFICER_EMAIL = 'samantha@prinstinegroup.org';
-const isHROfficer = (user) => (user?.email || '').toLowerCase().trim() === HR_OFFICER_EMAIL;
+const HR_OFFICER_EMAILS = ['samantha@prinstinegroup.org'];
+const isHROfficer = (user) => HR_OFFICER_EMAILS.includes(((user?.email ?? '') + '').toLowerCase().trim());
 
 // Get all staff (Admin, HR Officer, and Human Resources Department Head can see all; Staff can see their own)
 router.get('/', authenticateToken, requireStaffManagement, async (req, res) => {

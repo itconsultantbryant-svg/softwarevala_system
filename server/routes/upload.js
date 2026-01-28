@@ -4,6 +4,7 @@ const upload = require('../utils/upload');
 const uploadClaims = require('../utils/uploadClaims');
 const uploadCommunications = require('../utils/uploadCommunications');
 const uploadReports = require('../utils/uploadReports');
+const { uploadEntityImage } = require('../utils/uploadEntityImages');
 const { authenticateToken } = require('../utils/auth');
 const path = require('path');
 const fs = require('fs');
@@ -22,32 +23,24 @@ router.post('/profile-image', authenticateToken, upload.single('image'), async (
     // Get user's current profile image to delete old one
     const user = await db.get('SELECT profile_image FROM users WHERE id = ?', [userId]);
     
-    // Delete old profile image if it exists (to save disk space)
+    // Delete old profile image if it exists (only under profile-images; never touch entity-images)
     if (user && user.profile_image) {
       try {
-        // Extract filename from profile_image URL/path
         let oldImagePath = user.profile_image;
-        
-        // Remove base URL if present to get relative path
         if (oldImagePath.includes('/uploads/')) {
           const pathMatch = oldImagePath.match(/\/uploads\/[^?]+/);
-          if (pathMatch) {
-            oldImagePath = pathMatch[0];
+          if (pathMatch) oldImagePath = pathMatch[0];
+        }
+        if (oldImagePath.includes('/uploads/profile-images/')) {
+          const oldImageFullPath = path.join(__dirname, '../..', oldImagePath);
+          const normalizedOldPath = path.normalize(oldImageFullPath);
+          const profileImagesDir = path.normalize(path.join(__dirname, '../../uploads/profile-images'));
+          if (normalizedOldPath.startsWith(profileImagesDir) && fs.existsSync(normalizedOldPath)) {
+            fs.unlinkSync(normalizedOldPath);
+            console.log('Deleted old profile image:', normalizedOldPath);
           }
         }
-        
-        // Construct full path to old image
-        const oldImageFullPath = path.join(__dirname, '../..', oldImagePath);
-        const normalizedOldPath = path.normalize(oldImageFullPath);
-        const uploadsBaseDir = path.normalize(path.join(__dirname, '../../uploads'));
-        
-        // Security check - ensure old image is within uploads directory
-        if (normalizedOldPath.startsWith(uploadsBaseDir) && fs.existsSync(normalizedOldPath)) {
-          fs.unlinkSync(normalizedOldPath);
-          console.log('Deleted old profile image:', normalizedOldPath);
-        }
       } catch (deleteError) {
-        // Log but don't fail the upload if old image deletion fails
         console.warn('Could not delete old profile image (non-fatal):', deleteError.message);
       }
     }
@@ -107,6 +100,30 @@ router.post('/profile-image', authenticateToken, upload.single('image'), async (
     }
     
     res.status(500).json({ error: 'Failed to upload profile image. Please try again.' });
+  }
+});
+
+// Upload entity profile image (staff, student, instructor, client, partner, user)
+// Does NOT update any user. Caller includes imageUrl in create/update API. Permanent storage under uploads/entity-images/{type}/
+router.post('/entity-image', authenticateToken, uploadEntityImage.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    const relativePath = `/uploads/entity-images/${req.file.filename}`;
+    res.json({
+      message: 'Image uploaded successfully',
+      imageUrl: relativePath,
+      filename: req.file.filename
+    });
+  } catch (error) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Image size too large. Maximum size is 5MB.' });
+    }
+    if (error.message && error.message.includes('Only image files')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Failed to upload image. Please try again.' });
   }
 });
 

@@ -2,7 +2,7 @@ import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
-const HR_OFFICER_EMAIL = 'samantha@prinstinegroup.org';
+const HR_OFFICER_EMAILS = ['samantha@prinstinegroup.org'];
 
 const StaffRoute = ({ children }) => {
   const { user, loading } = useAuth();
@@ -21,14 +21,15 @@ const StaffRoute = ({ children }) => {
     return <Navigate to="/login" replace />;
   }
 
-  const email = (user.email || '').toLowerCase().trim();
+  const email = ((user.email ?? '') + '').toLowerCase().trim();
+  const role = (user.role ?? '').toString();
   const hasAccess =
-    user.role === 'Admin' ||
-    user.role === 'HumanResourcesDepartmentHead' ||
-    email === HR_OFFICER_EMAIL;
+    role === 'Admin' ||
+    role === 'HumanResourcesDepartmentHead' ||
+    HR_OFFICER_EMAILS.includes(email);
 
   if (!hasAccess) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={role === 'Staff' ? '/staff-dashboard' : '/dashboard'} replace />;
   }
 
   return children;

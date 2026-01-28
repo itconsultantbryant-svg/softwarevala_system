@@ -18,6 +18,7 @@ const Sidebar = () => {
   const [hasFinanceAccess, setHasFinanceAccess] = useState(false);
   const [hasAcademyAccess, setHasAcademyAccess] = useState(false);
   const [hasStaffManagementAccess, setHasStaffManagementAccess] = useState(false);
+  const [hasStudentPaymentAccess, setHasStudentPaymentAccess] = useState(false);
 
   /* =========================
      ROLE HELPERS
@@ -81,9 +82,7 @@ const checkFinanceAccess = async () => {
   if (!user) return setHasFinanceAccess(false);
 
   const userRole = normalizeRole(user.role);
-  const userEmail = user.email?.toLowerCase().trim();
-
-  // Emails that should always have finance access
+  const userEmail = ((user.email ?? '') + '').toLowerCase().trim();
   const financeEmails = ['sean@prinstinegroup.org'];
 
   if (userRole === 'admin' || financeEmails.includes(userEmail)) {
@@ -93,17 +92,18 @@ const checkFinanceAccess = async () => {
   try {
     if (['departmenthead', 'assistant finance officer'].includes(userRole)) {
       const res = await api.get('/departments');
-      const finance = res.data.departments.find(d =>
+      const finance = res.data.departments?.find(d =>
         (d.manager_id === user.id ||
-          d.head_email?.toLowerCase().trim() === userEmail) &&
-        d.name?.toLowerCase().includes('finance')
+          (d.head_email ?? '').toLowerCase().trim() === userEmail) &&
+        (d.name ?? '').toLowerCase().includes('finance')
       );
       return setHasFinanceAccess(!!finance);
     }
 
     if (userRole === 'staff') {
+      if (financeEmails.includes(userEmail)) return setHasFinanceAccess(true);
       const res = await api.get('/staff');
-      const me = res.data.staff.find(s => s.user_id === user.id);
+      const me = (res.data.staff || []).find(s => s.user_id === user.id);
       return setHasFinanceAccess(!!me?.department?.toLowerCase().includes('finance'));
     }
   } catch (err) {
@@ -113,6 +113,47 @@ const checkFinanceAccess = async () => {
   setHasFinanceAccess(false);
 };
 
+  /* =========================
+     STAFF MANAGEMENT ACCESS (Admin, HR Dept Head, HR Officer by email)
+  ========================= */
+  const HR_OFFICER_EMAILS = ['samantha@prinstinegroup.org'];
+  const checkStaffManagementAccess = () => {
+    if (!user) return setHasStaffManagementAccess(false);
+    const email = ((user.email ?? '') + '').toLowerCase().trim();
+    const role = normalizeRole(user.role);
+    const ok =
+      role === 'admin' ||
+      role === 'humanresourcesdepartmenthead' ||
+      HR_OFFICER_EMAILS.includes(email);
+    setHasStaffManagementAccess(!!ok);
+  };
+
+  /* =========================
+     STUDENT PAYMENT ACCESS (Finance head, Sean, Academy head, cvulue)
+  ========================= */
+  const STUDENT_PAYMENT_EMAILS = ['sean@prinstinegroup.org', 'cvulue@prinstinegroup.org'];
+  const checkStudentPaymentAccess = async () => {
+    if (!user) return setHasStudentPaymentAccess(false);
+    const email = ((user.email ?? '') + '').toLowerCase().trim();
+    const role = normalizeRole(user.role);
+    if (role === 'admin' || STUDENT_PAYMENT_EMAILS.includes(email)) {
+      return setHasStudentPaymentAccess(true);
+    }
+    try {
+      if (role === 'departmenthead') {
+        const res = await api.get('/departments');
+        const dept = (res.data.departments || []).find(
+          (d) =>
+            (d.manager_id === user.id || (d.head_email ?? '').toLowerCase().trim() === email) &&
+            (d.name ?? '').toLowerCase().match(/finance|academy|elearning/)
+        );
+        return setHasStudentPaymentAccess(!!dept);
+      }
+    } catch (err) {
+      console.error('Student payment access check failed:', err);
+    }
+    setHasStudentPaymentAccess(false);
+  };
 
   /* =========================
      NOTIFICATIONS
@@ -146,6 +187,7 @@ const checkFinanceAccess = async () => {
     checkFinanceAccess();
     checkAcademyAccess();
     checkStaffManagementAccess();
+    checkStudentPaymentAccess();
 
     if (normalizeRole(user.role) === 'departmenthead') {
       fetchUnreadFromAdmin();
@@ -183,6 +225,7 @@ const checkFinanceAccess = async () => {
     { path: '/communications', label: 'Communications', icon: 'bi-chat', roles: ['*'] },
     { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3', roles: ['*'] },
     { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['*'] },
+    { path: '/student-payments', label: 'Student Payments', icon: 'bi-credit-card', roles: ['Admin'], studentPayment: true },
 
     { path: '/users', label: 'Users', icon: 'bi-people', roles: ['Admin'] },
     { path: '/departments', label: 'Departments', icon: 'bi-diagram-3', roles: ['Admin'] },
@@ -198,10 +241,16 @@ const checkFinanceAccess = async () => {
       <ul>
         {menuItems
           .filter(item => {
-            const roleOk = item.staffManagement ? hasStaffManagementAccess : hasRole(item.roles);
-            return roleOk &&
+            const roleOk = item.staffManagement
+              ? hasStaffManagementAccess
+              : item.studentPayment
+                ? hasStudentPaymentAccess
+                : hasRole(item.roles);
+            return (
+              roleOk &&
               (!item.academy || hasAcademyAccess) &&
-              (!item.finance || hasFinanceAccess);
+              (!item.finance || hasFinanceAccess)
+            );
           })
           .map(item => (
             <li key={item.path} className={location.pathname === item.path ? 'active' : ''}>

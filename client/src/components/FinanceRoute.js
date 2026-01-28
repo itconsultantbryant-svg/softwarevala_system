@@ -9,6 +9,10 @@ const FinanceRoute = ({ children }) => {
   const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    if (!user && !loading) {
+      setChecking(false);
+      return;
+    }
     if (user && !loading) {
       checkFinanceAccess();
     }
@@ -16,21 +20,21 @@ const FinanceRoute = ({ children }) => {
 
   const checkFinanceAccess = async () => {
     try {
-      const email = (user?.email || '').toLowerCase().trim();
-      if (user?.role === 'Admin' || email === 'sean@prinstinegroup.org') {
+      const email = ((user?.email ?? '') + '').toLowerCase().trim();
+      const role = (user?.role ?? '').toString();
+      // Admin or Assistant Finance Officer (sean@prinstinegroup.org) always have access
+      if (role === 'Admin' || email === 'sean@prinstinegroup.org') {
         setHasAccess(true);
         setChecking(false);
         return;
       }
 
       // Check if user is Finance Department Head
-      if (user?.role === 'DepartmentHead') {
+      if (role === 'DepartmentHead') {
         const response = await api.get('/departments');
-        const userEmailLower = user.email.toLowerCase().trim();
-        const financeDept = response.data.departments.find(d => 
-          (d.manager_id === user.id || 
-           (d.head_email && d.head_email.toLowerCase().trim() === userEmailLower)) &&
-          d.name && d.name.toLowerCase().includes('finance')
+        const financeDept = (response.data.departments || []).find(d =>
+          (d.manager_id === user.id || ((d.head_email ?? '').toLowerCase().trim() === email)) &&
+          (d.name || '').toLowerCase().includes('finance')
         );
         if (financeDept) {
           setHasAccess(true);
@@ -39,9 +43,14 @@ const FinanceRoute = ({ children }) => {
         }
       }
 
-      // Check if user is Assistant Finance Officer (Staff in Finance department)
-      if (user?.role === 'Staff') {
-        const dept = (user.department || '').toLowerCase();
+      // Check if user is Assistant Finance Officer (Staff in Finance department or by email)
+      if (role === 'Staff') {
+        if (email === 'sean@prinstinegroup.org') {
+          setHasAccess(true);
+          setChecking(false);
+          return;
+        }
+        const dept = ((user?.department ?? '') + '').toLowerCase();
         if (dept.includes('finance')) {
           setHasAccess(true);
           setChecking(false);

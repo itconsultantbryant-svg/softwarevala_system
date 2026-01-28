@@ -87,14 +87,23 @@ const PettyCash = () => {
         return;
       }
 
-      // Check if user is Assistant Finance Officer (Staff in Finance)
+      // Check if user is Assistant Finance Officer (Staff in Finance or sean@)
       if (user?.role === 'Staff') {
-        const response = await api.get('/staff');
-        const staffList = response.data.staff || [];
-        const myStaff = staffList.find(s => s.user_id === user.id);
-        if (myStaff && myStaff.department && myStaff.department.toLowerCase().includes('finance')) {
+        const email = ((user.email ?? '') + '').toLowerCase().trim();
+        if (email === 'sean@prinstinegroup.org') {
           setCanDelete(true);
           return;
+        }
+        try {
+          const response = await api.get('/staff');
+          const staffList = response.data.staff || [];
+          const myStaff = staffList.find(s => s.user_id === user.id);
+          if (myStaff && myStaff.department && myStaff.department.toLowerCase().includes('finance')) {
+            setCanDelete(true);
+            return;
+          }
+        } catch (e) {
+          // /staff may 403 for non-HR Staff; treat as no delete
         }
       }
 

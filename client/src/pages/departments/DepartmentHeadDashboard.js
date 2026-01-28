@@ -441,6 +441,18 @@ const DepartmentHeadDashboard = () => {
                 <i className="bi bi-credit-card me-2"></i>Student Payments
               </button>
             </div>
+          ) : /academy|elearning|e-learning/.test(department?.name?.toLowerCase() || '') ? (
+            <div className="btn-group-vertical" role="group">
+              <button className="btn btn-primary mb-2" onClick={() => { setReportType(null); setShowForm(true); }}>
+                <i className="bi bi-plus-circle me-2"></i>Submit Report
+              </button>
+              <button className="btn btn-success mb-2" onClick={() => setShowProgressReport(true)}>
+                <i className="bi bi-graph-up me-2"></i>Progress Report
+              </button>
+              <button className="btn btn-warning" onClick={() => setShowStudentPaymentManagement(true)}>
+                <i className="bi bi-credit-card me-2"></i>Student Payments
+              </button>
+            </div>
           ) : (
             <div className="btn-group" role="group">
               <button className="btn btn-primary" onClick={() => { setReportType(null); setShowForm(true); }}>

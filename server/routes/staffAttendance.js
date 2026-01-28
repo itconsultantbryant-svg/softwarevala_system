@@ -187,6 +187,18 @@ function weekStart(d) {
   return x.toISOString().split('T')[0];
 }
 
+function getDefaultWeekRange() {
+  const now = new Date();
+  const start = new Date(now);
+  start.setDate(now.getDate() - now.getDay());
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  return {
+    start: start.toISOString().split('T')[0],
+    end: end.toISOString().split('T')[0]
+  };
+}
+
 // ============================
 // ADMIN: View Attendance (FIXED)
 // ============================
@@ -208,9 +220,7 @@ router.get(
       if (date) {
         where += ' AND sa.attendance_date = ?';
         params.push(date);
-      }
-
-      if (week_start) {
+      } else if (week_start) {
         const start = new Date(week_start);
         const end = new Date(start);
         end.setDate(start.getDate() + 6);
@@ -220,9 +230,7 @@ router.get(
           start.toISOString().split('T')[0],
           end.toISOString().split('T')[0]
         );
-      }
-
-      if (month && year) {
+      } else if (month && year) {
         const start = `${year}-${String(month).padStart(2, '0')}-01`;
         const end = new Date(year, Number(month), 0)
           .toISOString()
@@ -230,6 +238,11 @@ router.get(
 
         where += ' AND sa.attendance_date BETWEEN ? AND ?';
         params.push(start, end);
+      } else {
+        // Default: current week so admin always sees recent staff/dept head attendance
+        const { start: wStart, end: wEnd } = getDefaultWeekRange();
+        where += ' AND sa.attendance_date BETWEEN ? AND ?';
+        params.push(wStart, wEnd);
       }
 
       const rows = await db.all(
