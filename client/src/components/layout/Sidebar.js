@@ -361,7 +361,7 @@ const Sidebar = () => {
               // Check additional access requirements
               const academyOk = !item.academy || hasAcademyAccess || item.instructorAcademy === true;
               const financeOk = !item.finance || hasFinanceAccess;
-              const studentPortalOk = !item.studentPortal || userRole === 'student';
+              const studentPortalOk = !item.studentPortal || normalizeRole(user?.role) === 'student';
               
               return roleOk && academyOk && financeOk && studentPortalOk;
             })

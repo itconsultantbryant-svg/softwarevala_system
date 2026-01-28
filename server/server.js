@@ -2469,8 +2469,9 @@ async function startServer() {
     // Start periodic database checkpointing for data persistence
     startPeriodicCheckpoint();
     
-    server.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    const host = process.env.HOST || '127.0.0.1';
+    server.listen(PORT, host, () => {
+      console.log(`Server running on ${host}:${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`✓ Server is ready to accept requests`);
       
