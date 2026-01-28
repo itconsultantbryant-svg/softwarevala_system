@@ -1243,8 +1243,54 @@ async function initializeDatabase() {
               ]);
             }
             
-            // Drop old table
-            await db.run('DROP TABLE users');
+            // Drop old table - handle foreign key constraints
+            // For SQLite: disable foreign keys temporarily
+            // For PostgreSQL: use CASCADE to drop dependent objects
+            const USE_POSTGRESQL = !!process.env.DATABASE_URL;
+            if (USE_POSTGRESQL) {
+              // PostgreSQL: Drop with CASCADE to handle foreign key dependencies
+              try {
+                await db.run('DROP TABLE IF EXISTS users CASCADE');
+              } catch (dropError) {
+                // If CASCADE fails, try dropping foreign key constraints first
+                if (dropError.message.includes('depends on') || dropError.message.includes('cannot drop')) {
+                  console.log('Attempting to drop foreign key constraints first...');
+                  try {
+                    // Get all foreign key constraints referencing users table
+                    const fkConstraints = await db.all(`
+                      SELECT 
+                        conname, 
+                        conrelid::regclass::text as table_name
+                      FROM pg_constraint
+                      WHERE confrelid = 'users'::regclass::oid
+                      AND contype = 'f'
+                    `);
+                    
+                    for (const fk of fkConstraints) {
+                      try {
+                        await db.run(`ALTER TABLE ${fk.table_name} DROP CONSTRAINT IF EXISTS ${fk.conname}`);
+                      } catch (fkError) {
+                        console.warn(`Could not drop constraint ${fk.conname}:`, fkError.message);
+                      }
+                    }
+                    
+                    // Try dropping table again
+                    await db.run('DROP TABLE IF EXISTS users');
+                  } catch (fkError) {
+                    console.warn('Could not drop foreign key constraints, trying CASCADE again:', fkError.message);
+                    // Last resort: try CASCADE again
+                    await db.run('DROP TABLE IF EXISTS users CASCADE');
+                  }
+                } else {
+                  throw dropError;
+                }
+              }
+            } else {
+              // SQLite: Disable foreign keys temporarily
+              await db.run('PRAGMA foreign_keys = OFF');
+              await db.run('DROP TABLE IF EXISTS users');
+              await db.run('PRAGMA foreign_keys = ON');
+            }
             
             // Rename new table
             await db.run('ALTER TABLE users_new RENAME TO users');
