@@ -1,7 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
-import { exportToPDF, exportToExcel } from '../../utils/exportUtils';
 import { getSocket } from '../../config/socket';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -38,6 +37,9 @@ const AttendanceHistory = () => {
   });
   const [approvingId, setApprovingId] = useState(null);
   const [approvalNotes, setApprovalNotes] = useState('');
+  const [bulkSelectedIds, setBulkSelectedIds] = useState([]);
+  const [bulkNotes, setBulkNotes] = useState('');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState('admin'); // Admin defaults to admin view to see staff/dept head attendance
 
   const fetchAttendance = useCallback(async () => {
@@ -293,31 +295,44 @@ const AttendanceHistory = () => {
     }
   };
 
+  const getAdminExportDateRange = () => {
+    const viewType = adminFilter.viewType || 'week';
+    const now = new Date();
+
+    if (viewType === 'date') {
+      const d = adminFilter.date || now.toISOString().split('T')[0];
+      return { startDate: d, endDate: d };
+    }
+
+    if (viewType === 'month') {
+      const year = Number(adminFilter.year || now.getFullYear());
+      const month = Number(adminFilter.month || (now.getMonth() + 1));
+      const start = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const end = new Date(year, month, 0).toISOString().split('T')[0];
+      return { startDate: start, endDate: end };
+    }
+
+    if (viewType === 'year') {
+      const year = Number(adminFilter.year || now.getFullYear());
+      return { startDate: `${year}-01-01`, endDate: `${year}-12-31` };
+    }
+
+    // week (default)
+    const weekStartStr = adminFilter.week_start || getDefaultWeekStart();
+    const weekStart = new Date(weekStartStr);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    return {
+      startDate: weekStart.toISOString().split('T')[0],
+      endDate: weekEnd.toISOString().split('T')[0]
+    };
+  };
+
   const handleExportExcel = async () => {
     try {
       const params = new URLSearchParams();
       if (adminFilter.user_id) params.append('user_id', adminFilter.user_id);
-      let startDate; let endDate;
-      if (adminFilter.week_start) {
-        const weekStart = new Date(adminFilter.week_start);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        startDate = weekStart.toISOString().split('T')[0];
-        endDate = weekEnd.toISOString().split('T')[0];
-      } else if (adminFilter.date) {
-        startDate = endDate = adminFilter.date;
-      } else if (adminFilter.month && adminFilter.year) {
-        const startOfMonth = new Date(adminFilter.year, adminFilter.month - 1, 1);
-        const endOfMonth = new Date(adminFilter.year, adminFilter.month, 0);
-        startDate = startOfMonth.toISOString().split('T')[0];
-        endDate = endOfMonth.toISOString().split('T')[0];
-      } else {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        startDate = startOfMonth.toISOString().split('T')[0];
-        endDate = endOfMonth.toISOString().split('T')[0];
-      }
+      const { startDate, endDate } = getAdminExportDateRange();
       params.append('start_date', startDate);
       params.append('end_date', endDate);
 
@@ -338,27 +353,7 @@ const AttendanceHistory = () => {
     try {
       const params = new URLSearchParams();
       if (adminFilter.user_id) params.append('user_id', adminFilter.user_id);
-      let startDate; let endDate;
-      if (adminFilter.week_start) {
-        const weekStart = new Date(adminFilter.week_start);
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        startDate = weekStart.toISOString().split('T')[0];
-        endDate = weekEnd.toISOString().split('T')[0];
-      } else if (adminFilter.date) {
-        startDate = endDate = adminFilter.date;
-      } else if (adminFilter.month && adminFilter.year) {
-        const startOfMonth = new Date(adminFilter.year, adminFilter.month - 1, 1);
-        const endOfMonth = new Date(adminFilter.year, adminFilter.month, 0);
-        startDate = startOfMonth.toISOString().split('T')[0];
-        endDate = endOfMonth.toISOString().split('T')[0];
-      } else {
-        const now = new Date();
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        startDate = startOfMonth.toISOString().split('T')[0];
-        endDate = endOfMonth.toISOString().split('T')[0];
-      }
+      const { startDate, endDate } = getAdminExportDateRange();
       params.append('start_date', startDate);
       params.append('end_date', endDate);
 
@@ -443,12 +438,6 @@ const AttendanceHistory = () => {
     return { color: 'secondary', text: status };
   };
 
-  const getWeekStartDate = (date) => {
-    const d = new Date(date);
-    d.setDate(d.getDate() - d.getDay());
-    return d.toISOString().split('T')[0];
-  };
-
   const filteredAttendance = attendance.filter(record => {
     if (filter.dateFrom && new Date(record.attendance_date) < new Date(filter.dateFrom)) return false;
     if (filter.dateTo && new Date(record.attendance_date) > new Date(filter.dateTo)) return false;
@@ -470,6 +459,51 @@ const AttendanceHistory = () => {
     const rejected = rows.filter(r => r.status === 'Rejected').length;
     return { total: rows.length, pending, approved, rejected };
   }, [adminView]);
+
+  const pendingRows = useMemo(() => {
+    const rows = adminView?.attendance || [];
+    return rows.filter((r) => r.status === 'Pending');
+  }, [adminView]);
+
+  const bulkToggle = (id) => {
+    setBulkSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  };
+
+  const bulkToggleAll = (checked) => {
+    if (!checked) return setBulkSelectedIds([]);
+    setBulkSelectedIds(pendingRows.map((r) => r.id));
+  };
+
+  const runBulkDecision = async (status) => {
+    if (!bulkSelectedIds.length) {
+      alert('Select at least one pending attendance record.');
+      return;
+    }
+    if (status === 'Rejected' && !String(bulkNotes || '').trim()) {
+      alert('Please provide notes to reject selected attendance records.');
+      return;
+    }
+    try {
+      setBulkSubmitting(true);
+      // Run sequentially to avoid overwhelming the server
+      for (const id of bulkSelectedIds) {
+        await api.put(`/attendance/${id}/approve`, {
+          status,
+          admin_notes: String(bulkNotes || '').trim() || null
+        });
+      }
+      setBulkSelectedIds([]);
+      setBulkNotes('');
+      await fetchAdminView();
+    } catch (e) {
+      console.error('Bulk decision failed:', e);
+      alert(e?.response?.data?.error || 'Bulk action failed. Please try again.');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -736,6 +770,127 @@ const AttendanceHistory = () => {
               </div>
             </div>
           </div>
+
+          {/* Pending Approvals (Admin) */}
+          {pendingRows.length > 0 && (
+            <div className="card mb-4">
+              <div className="card-header bg-warning text-dark">
+                <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <h5 className="mb-0">
+                    <i className="bi bi-hourglass-split me-2"></i>
+                    Pending Approvals ({pendingRows.length})
+                  </h5>
+                  <div className="d-flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-success"
+                      disabled={bulkSubmitting || bulkSelectedIds.length === 0}
+                      onClick={() => runBulkDecision('Approved')}
+                    >
+                      Approve Selected
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      disabled={bulkSubmitting || bulkSelectedIds.length === 0}
+                      onClick={() => runBulkDecision('Rejected')}
+                    >
+                      Reject Selected
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="card-body">
+                <div className="row g-3 align-items-end mb-3">
+                  <div className="col-md-8">
+                    <label className="form-label">Bulk Notes (required for reject)</label>
+                    <input
+                      className="form-control"
+                      value={bulkNotes}
+                      onChange={(e) => setBulkNotes(e.target.value)}
+                      placeholder="Notes will be applied to all selected records..."
+                      disabled={bulkSubmitting}
+                    />
+                  </div>
+                  <div className="col-md-4">
+                    <div className="small text-muted">
+                      Selected: <strong>{bulkSelectedIds.length}</strong>
+                    </div>
+                    {bulkSubmitting && (
+                      <div className="small text-muted mt-1">
+                        Processing bulk action…
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="table-responsive">
+                  <table className="table table-sm table-hover align-middle">
+                    <thead>
+                      <tr>
+                        <th style={{ width: 34 }}>
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            checked={bulkSelectedIds.length > 0 && bulkSelectedIds.length === pendingRows.length}
+                            onChange={(e) => bulkToggleAll(e.target.checked)}
+                          />
+                        </th>
+                        <th>Date</th>
+                        <th>Employee</th>
+                        <th>Role</th>
+                        <th>Sign In</th>
+                        <th>Sign Out</th>
+                        <th style={{ width: 110 }}>Review</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingRows.map((r) => (
+                        <tr key={r.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              className="form-check-input"
+                              checked={bulkSelectedIds.includes(r.id)}
+                              onChange={() => bulkToggle(r.id)}
+                            />
+                          </td>
+                          <td>{new Date(r.attendance_date).toLocaleDateString()}</td>
+                          <td>
+                            <div className="fw-semibold">{r.user_display_name || r.user_name || 'N/A'}</div>
+                            <div className="text-muted small">{r.user_email || ''}</div>
+                          </td>
+                          <td>
+                            <span className="badge bg-secondary">{r.user_role || 'N/A'}</span>
+                          </td>
+                          <td>
+                            {r.sign_in_time ? new Date(r.sign_in_time).toLocaleTimeString() : '—'}
+                            {r.sign_in_late ? <span className="badge bg-warning text-dark ms-2">Late</span> : null}
+                          </td>
+                          <td>
+                            {r.sign_out_time ? new Date(r.sign_out_time).toLocaleTimeString() : '—'}
+                            {r.sign_out_early ? <span className="badge bg-warning text-dark ms-2">Early</span> : null}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => {
+                                setApprovingId(r.id);
+                                setApprovalNotes('');
+                              }}
+                            >
+                              Review
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Weekly Arrangement View */}
           {adminFilter.viewType === 'week' && adminView && adminView.attendance_by_user && adminView.attendance_by_user.length > 0 ? (

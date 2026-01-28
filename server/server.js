@@ -211,6 +211,9 @@ async function initializeDatabase() {
     const addMissingColumnsPath = path.join(__dirname, 'database/migrations/023_add_missing_columns.sql');
     const appraisalsSystemPath = path.join(__dirname, 'database/migrations/024_appraisals_system.sql');
     const academyCohortsPath = path.join(__dirname, 'database/migrations/025_academy_cohorts.sql');
+    const studentPaymentTransactionsPath = path.join(__dirname, 'database/migrations/026_student_payment_transactions.sql');
+    const studentInvoicesPath = path.join(__dirname, 'database/migrations/027_student_invoices.sql');
+    const gradeSubmissionsPath = path.join(__dirname, 'database/migrations/028_grade_submissions.sql');
     
     if (tables.length === 0) {
       console.log('Initializing database schema...');
@@ -2176,6 +2179,72 @@ async function initializeDatabase() {
             }
           }
         }
+      }
+    }
+
+    // Run student payment transactions migration if needed
+    if (fs.existsSync(studentPaymentTransactionsPath)) {
+      const tExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='student_payment_transactions'");
+      if (!tExists) {
+        console.log('Creating student_payment_transactions table...');
+        const sql = fs.readFileSync(studentPaymentTransactionsPath, 'utf8');
+        const stmts = sql.split(';').filter(s => s.trim().length > 0);
+        for (const statement of stmts) {
+          if (statement.trim()) {
+            try {
+              await db.run(statement);
+            } catch (e) {
+              if (!e.message.includes('already exists') && !e.message.includes('duplicate')) {
+                console.error('Error executing student_payment_transactions migration:', e.message);
+              }
+            }
+          }
+        }
+        console.log('✓ student_payment_transactions created');
+      }
+    }
+
+    // Run student invoices migration if needed
+    if (fs.existsSync(studentInvoicesPath)) {
+      const invExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='student_invoices'");
+      if (!invExists) {
+        console.log('Creating student invoices tables...');
+        const sql = fs.readFileSync(studentInvoicesPath, 'utf8');
+        const stmts = sql.split(';').filter(s => s.trim().length > 0);
+        for (const statement of stmts) {
+          if (statement.trim()) {
+            try {
+              await db.run(statement);
+            } catch (e) {
+              if (!e.message.includes('already exists') && !e.message.includes('duplicate')) {
+                console.error('Error executing student_invoices migration:', e.message);
+              }
+            }
+          }
+        }
+        console.log('✓ student_invoices created');
+      }
+    }
+
+    // Run grade submissions migration if needed
+    if (fs.existsSync(gradeSubmissionsPath)) {
+      const gExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='grade_submissions'");
+      if (!gExists) {
+        console.log('Creating grade_submissions table...');
+        const sql = fs.readFileSync(gradeSubmissionsPath, 'utf8');
+        const stmts = sql.split(';').filter(s => s.trim().length > 0);
+        for (const statement of stmts) {
+          if (statement.trim()) {
+            try {
+              await db.run(statement);
+            } catch (e) {
+              if (!e.message.includes('already exists') && !e.message.includes('duplicate')) {
+                console.error('Error executing grade_submissions migration:', e.message);
+              }
+            }
+          }
+        }
+        console.log('✓ grade_submissions created');
       }
     }
     
