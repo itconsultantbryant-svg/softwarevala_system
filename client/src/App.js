@@ -125,7 +125,7 @@ function App() {
                           <Route path="/student/grades" element={<StudentGrades />} />
                           <Route path="/student/certificates" element={<StudentCertificates />} />
                           <Route path="/student/billing" element={<StudentBilling />} />
-                          <Route path="student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />
+                          <Route path="/student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </div>

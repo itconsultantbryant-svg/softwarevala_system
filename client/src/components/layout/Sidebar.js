@@ -210,27 +210,55 @@ const checkFinanceAccess = async () => {
      MENU CONFIG
   ========================= */
 
-  const menuItems = useMemo(() => [
-    { path: '/dashboard', label: 'Dashboard', icon: 'bi-house', roles: ['Admin', 'DepartmentHead', 'Staff', 'Assistant Finance Officer'] },
-    { path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house', roles: ['Staff'] },
-    { path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building', roles: ['DepartmentHead'] },
+  const menuItems = useMemo(() => {
+    if (!user) return [];
+    
+    const userRole = normalizeRole(user.role);
+    const items = [];
 
-    { path: '/academy', label: 'Academy Management', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff'], academy: true },
+    // Dashboard - Show appropriate dashboard based on role
+    if (userRole === 'staff') {
+      items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house', roles: ['Staff'] });
+    } else if (userRole === 'departmenthead') {
+      items.push({ path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building', roles: ['DepartmentHead'] });
+    } else {
+      // Admin and other roles see main dashboard
+      items.push({ path: '/dashboard', label: 'Dashboard', icon: 'bi-house', roles: ['Admin', 'Assistant Finance Officer'] });
+    }
+
+    // Academy Management
+    items.push({ path: '/academy', label: 'Academy Management', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff'], academy: true });
 
     // Finance menus for Admin, Finance Head, Assistant Finance Officer
-    { path: '/finance/petty-cash', label: 'Petty Cash', icon: 'bi-cash', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true },
-    { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true },
-    { path: '/finance-reports', label: 'Finance', icon: 'bi-cash-stack', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true },
+    items.push(
+      { path: '/finance/petty-cash', label: 'Petty Cash', icon: 'bi-cash', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true },
+      { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true },
+      { path: '/finance-reports', label: 'Finance', icon: 'bi-cash-stack', roles: ['Admin', 'DepartmentHead', 'Assistant Finance Officer'], finance: true }
+    );
 
-    { path: '/communications', label: 'Communications', icon: 'bi-chat', roles: ['*'] },
-    { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3', roles: ['*'] },
-    { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['*'] },
-    { path: '/student-payments', label: 'Student Payments', icon: 'bi-credit-card', roles: ['Admin'], studentPayment: true },
+    // Common menus for all roles
+    items.push(
+      { path: '/communications', label: 'Communications', icon: 'bi-chat', roles: ['*'] },
+      { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3', roles: ['*'] },
+      { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['*'] }
+    );
 
-    { path: '/users', label: 'Users', icon: 'bi-people', roles: ['Admin'] },
-    { path: '/departments', label: 'Departments', icon: 'bi-diagram-3', roles: ['Admin'] },
-    { path: '/staff', label: 'Staff', icon: 'bi-person-badge', roles: ['Admin', 'HumanResourcesDepartmentHead'], staffManagement: true },
-  ], []);
+    // Student Payments
+    items.push({ path: '/student-payments', label: 'Student Payments', icon: 'bi-credit-card', roles: ['Admin'], studentPayment: true });
+
+    // Admin-only menus
+    if (userRole === 'admin') {
+      items.push(
+        { path: '/users', label: 'Users', icon: 'bi-people', roles: ['Admin'] },
+        { path: '/departments', label: 'Departments', icon: 'bi-diagram-3', roles: ['Admin'] }
+      );
+    }
+
+    // Staff Management (Admin, HR Dept Head, HR Officer)
+    items.push({ path: '/staff', label: 'Staff', icon: 'bi-person-badge', roles: ['Admin', 'HumanResourcesDepartmentHead'], staffManagement: true });
+
+    return items;
+  }, [user]);
 
   /* =========================
      RENDER
@@ -241,25 +269,37 @@ const checkFinanceAccess = async () => {
       <ul>
         {menuItems
           .filter(item => {
-            const roleOk = item.staffManagement
-              ? hasStaffManagementAccess
-              : item.studentPayment
-                ? hasStudentPaymentAccess
-                : hasRole(item.roles);
-            return (
-              roleOk &&
-              (!item.academy || hasAcademyAccess) &&
-              (!item.finance || hasFinanceAccess)
-            );
+            // Check role access
+            let roleOk = false;
+            if (item.staffManagement) {
+              roleOk = hasStaffManagementAccess;
+            } else if (item.studentPayment) {
+              roleOk = hasStudentPaymentAccess;
+            } else {
+              roleOk = hasRole(item.roles);
+            }
+            
+            // Check additional access requirements
+            const academyOk = !item.academy || hasAcademyAccess;
+            const financeOk = !item.finance || hasFinanceAccess;
+            
+            return roleOk && academyOk && financeOk;
           })
-          .map(item => (
-            <li key={item.path} className={location.pathname === item.path ? 'active' : ''}>
-              <Link to={item.path}>
-                <i className={`bi ${item.icon}`} />
-                <span>{item.label}</span>
-              </Link>
-            </li>
-          ))}
+          .map(item => {
+            // Determine if this menu item is active
+            const isActive = location.pathname === item.path ||
+              (item.path === '/staff-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'staff') ||
+              (item.path === '/department-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'departmenthead');
+            
+            return (
+              <li key={item.path} className={isActive ? 'active' : ''}>
+                <Link to={item.path}>
+                  <i className={`bi ${item.icon}`} />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            );
+          })}
       </ul>
 
       <button onClick={logout} className="logout-btn">
