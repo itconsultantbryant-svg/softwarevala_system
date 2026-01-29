@@ -26,7 +26,7 @@ export const isAcademyStaff = (user) => {
   
   // Check if DepartmentHead manages Academy or Marketing department
   if (user.role === 'DepartmentHead') {
-    // Check if user's department includes academy/elearning or marketing
+    if (user.academyAccess === true) return true;
     const department = (user.department || '').toLowerCase();
     if (department.includes('academy') || department.includes('elearning') || department.includes('e-learning') || department.includes('marketing')) {
       return true;

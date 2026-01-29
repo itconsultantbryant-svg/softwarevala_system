@@ -190,26 +190,28 @@ router.get('/me', authenticateToken, async (req, res) => {
       }
     }
 
-    // For DepartmentHead users, get department name from departments table
+    // For DepartmentHead users, get all departments they manage and set academyAccess
     if (user.role === 'DepartmentHead') {
-      const deptTableInfo = await db.all("PRAGMA table_info(departments)");
-      const deptColumnNames = deptTableInfo.map(col => col.name);
-      const hasHeadEmail = deptColumnNames.includes('head_email');
-      
-      let dept;
-      if (hasHeadEmail) {
-        dept = await db.get(
-          'SELECT name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
-          [user.id, user.email.toLowerCase().trim()]
-        );
-      } else {
-        dept = await db.get(
-          'SELECT name FROM departments WHERE manager_id = ?',
-          [user.id]
-        );
+      let depts = [];
+      try {
+        const deptTableInfo = await db.all("PRAGMA table_info(departments)").catch(() => []);
+        const deptColumnNames = (deptTableInfo || []).map(col => col.name);
+        const hasHeadEmail = deptColumnNames.includes('head_email');
+        if (hasHeadEmail) {
+          depts = await db.all(
+            'SELECT name FROM departments WHERE manager_id = ? OR LOWER(TRIM(head_email)) = ?',
+            [user.id, (user.email || '').toLowerCase().trim()]
+          );
+        } else {
+          depts = await db.all('SELECT name FROM departments WHERE manager_id = ?', [user.id]);
+        }
+      } catch (e) {
+        console.warn('DepartmentHead departments fetch failed:', e?.message);
       }
-      if (dept && dept.name) {
-        user.department = dept.name;
+      if (Array.isArray(depts) && depts.length > 0) {
+        user.department = depts[0].name || null;
+        const academyMatch = /academy|elearning|e-learning|marketing/i;
+        user.academyAccess = depts.some(d => d && d.name && academyMatch.test(d.name));
       }
     }
 

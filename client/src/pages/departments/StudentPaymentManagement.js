@@ -21,6 +21,7 @@ const StudentPaymentManagement = () => {
   const [actionMode, setActionMode] = useState(null);
   const [adminNotes, setAdminNotes] = useState('');
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -66,11 +67,29 @@ const StudentPaymentManagement = () => {
   }, [fetchPending]);
 
   useEffect(() => {
-    if (selectedStudent) {
-      fetchStudentPayments(selectedStudent.id);
-      fetchEnrolledCourses(selectedStudent.id);
-    }
-  }, [selectedStudent]);
+    if (!selectedStudent) return;
+    const studentId = selectedStudent.id;
+    let cancelled = false;
+    setDetailLoading(true);
+    setError('');
+    Promise.all([
+      api.get(`/student-payments/student/${studentId}`),
+      api.get(`/student-payments/student/${studentId}/enrolled-courses`).catch(() => ({ data: { courses: [] } }))
+    ]).then(([payRes, coursesRes]) => {
+      if (cancelled) return;
+      setPayments(payRes.data.payments || []);
+      setEnrolledCourses(coursesRes.data?.courses || []);
+    }).catch((err) => {
+      if (!cancelled) {
+        setError(err.response?.data?.error || 'Failed to load student details');
+        setPayments([]);
+        setEnrolledCourses([]);
+      }
+    }).finally(() => {
+      if (!cancelled) setDetailLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [selectedStudent?.id]);
 
   const fetchStudents = async () => {
     try {
@@ -88,8 +107,8 @@ const StudentPaymentManagement = () => {
   const fetchStudentPayments = async (studentId) => {
     try {
       const response = await api.get(`/student-payments/student/${studentId}`);
-      setPayments(response.data.payments);
-      setSelectedStudent(response.data.student);
+      setPayments(response.data.payments || []);
+      // Keep selectedStudent from state; do not overwrite (avoids blink)
     } catch (err) {
       console.error('Error fetching student payments:', err);
       setError('Failed to fetch student payments: ' + (err.response?.data?.error || err.message));
@@ -111,8 +130,10 @@ const StudentPaymentManagement = () => {
   };
 
   const handleStudentSelect = (student) => {
-    setSelectedStudent(student);
     setShowPaymentForm(false);
+    setPayments([]);
+    setEnrolledCourses([]);
+    setSelectedStudent(student);
   };
 
   const handlePaymentFormChange = (e) => {
@@ -474,6 +495,9 @@ const StudentPaymentManagement = () => {
             <div className="card">
               <div className="card-header d-flex justify-content-between align-items-center">
                 <h5 className="mb-0">Payment Details - {selectedStudent.name}</h5>
+                {detailLoading && (
+                  <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true" />
+                )}
                 <div>
                   <button className="btn btn-sm btn-outline-primary me-2" onClick={() => handlePrint(selectedStudent, payments)}>
                     <i className="bi bi-printer me-1"></i>Print
@@ -498,6 +522,15 @@ const StudentPaymentManagement = () => {
                 </div>
               </div>
               <div className="card-body">
+                {detailLoading ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border text-primary" role="status">
+                      <span className="visually-hidden">Loading...</span>
+                    </div>
+                    <p className="mt-2 mb-0 text-muted">Loading payment details...</p>
+                  </div>
+                ) : (
+                <>
                 <div className="row mb-3">
                   <div className="col-md-3">
                     <strong>Student ID:</strong><br />
@@ -723,6 +756,8 @@ const StudentPaymentManagement = () => {
                     </tbody>
                   </table>
                 </div>
+                </>
+                )}
               </div>
             </div>
           ) : (
