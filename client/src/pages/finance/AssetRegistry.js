@@ -670,7 +670,7 @@ const AssetRegistry = () => {
                         <option value="">Select staff...</option>
                         {staffMembers.map((staff) => (
                           <option key={staff.id} value={staff.id}>
-                            {staff.name} - {staff.staff_id}
+                            {staff.name} - {staff.staff_id || staff.role_type}
                           </option>
                         ))}
                       </select>

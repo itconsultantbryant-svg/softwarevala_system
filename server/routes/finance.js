@@ -1213,7 +1213,7 @@ router.delete('/petty-cash/transactions/:id', authenticateToken, async (req, res
 // ASSET REGISTRY ROUTES
 // ==========================================
 
-// Get staff list for asset responsible person selection
+// Get staff + department heads for asset responsible person selection
 router.get('/assets/staff', authenticateToken, async (req, res) => {
   try {
     if (!(await isFinanceStaff(req.user)) && req.user.role !== 'Admin') {
@@ -1221,14 +1221,26 @@ router.get('/assets/staff', authenticateToken, async (req, res) => {
     }
 
     const staff = await db.all(
-      `SELECT s.id, s.staff_id, s.department, s.position, u.name, u.email
+      `SELECT s.id, s.staff_id, s.department, s.position, u.name, u.email, 'Staff' as role_type
        FROM staff s
        JOIN users u ON s.user_id = u.id
-       WHERE u.is_active = 1
-       ORDER BY u.name`
+       WHERE u.is_active = 1`
     );
 
-    res.json({ staff });
+    const deptHeads = await db.all(
+      `SELECT d.manager_id as id, 'DEPT-' || d.manager_id as staff_id, d.name as department,
+              d.name as position, u.name, u.email, 'DepartmentHead' as role_type
+       FROM departments d
+       JOIN users u ON d.manager_id = u.id
+       WHERE u.is_active = 1
+       GROUP BY d.manager_id, d.name, u.name, u.email`
+    );
+
+    const combined = [...staff, ...deptHeads].sort((a, b) =>
+      (a.name || '').localeCompare(b.name || '')
+    );
+
+    res.json({ staff: combined });
   } catch (error) {
     console.error('Get asset staff list error:', error);
     res.status(500).json({ error: 'Failed to fetch staff list: ' + error.message });
