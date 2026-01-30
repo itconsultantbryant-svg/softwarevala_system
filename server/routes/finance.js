@@ -1213,6 +1213,28 @@ router.delete('/petty-cash/transactions/:id', authenticateToken, async (req, res
 // ASSET REGISTRY ROUTES
 // ==========================================
 
+// Get staff list for asset responsible person selection
+router.get('/assets/staff', authenticateToken, async (req, res) => {
+  try {
+    if (!(await isFinanceStaff(req.user)) && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Access denied. Only Finance staff and Admin can view staff list.' });
+    }
+
+    const staff = await db.all(
+      `SELECT s.id, s.staff_id, s.department, s.position, u.name, u.email
+       FROM staff s
+       JOIN users u ON s.user_id = u.id
+       WHERE u.is_active = 1
+       ORDER BY u.name`
+    );
+
+    res.json({ staff });
+  } catch (error) {
+    console.error('Get asset staff list error:', error);
+    res.status(500).json({ error: 'Failed to fetch staff list: ' + error.message });
+  }
+});
+
 // Get all assets
 router.get('/assets', authenticateToken, async (req, res) => {
   try {

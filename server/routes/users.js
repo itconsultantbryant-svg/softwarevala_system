@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../utils/auth');
 const { hashPassword } = require('../utils/auth');
+const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const { logAction } = require('../utils/audit');
 
 // Get all users (Admin, DepartmentHead, and Staff can access for requisitions, meetings, etc.)
@@ -79,6 +80,7 @@ router.post('/', authenticateToken, requireRole('Admin'), [
     }
 
     const { email, name, username, phone, role, password, is_active, profile_image } = req.body;
+    const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
 
     // Check if user exists
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
@@ -101,7 +103,7 @@ router.post('/', authenticateToken, requireRole('Admin'), [
         role,
         name,
         phone || null,
-        profile_image || null,
+        normalizedProfileImage,
         is_active !== undefined ? (is_active ? 1 : 0) : 1,
         1
       ]
@@ -139,6 +141,9 @@ router.put('/:id', authenticateToken, requireRole('Admin'), async (req, res) => 
         if (field === 'is_active') {
           updateFields.push(`${field} = ?`);
           params.push(updates[field] ? 1 : 0);
+        } else if (field === 'profile_image') {
+          updateFields.push(`${field} = ?`);
+          params.push(normalizeProfileImage(updates[field]));
         } else {
           updateFields.push(`${field} = ?`);
           params.push(updates[field]);

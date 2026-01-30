@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { authenticateToken, requireRole, getFinanceAccessUserIds } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
 const { sendBulkNotifications, sendNotificationToUser, sendNotificationToRole } = require('../utils/notifications');
+const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const crypto = require('crypto');
 
 // Generate unique student ID
@@ -429,7 +430,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
 
     const { email, name, username, phone, enrollment_date, courses_enrolled, password, status, profile_image, cohort_id, period } = req.body;
 
-    const normProfileImage = (profile_image != null && String(profile_image).trim() !== '') ? String(profile_image).trim() : null;
+    const normProfileImage = normalizeProfileImage(profile_image) ?? null;
     const normEmail = (email || '').toString().toLowerCase().trim();
     const existingUser = await db.get('SELECT id FROM users WHERE LOWER(TRIM(email)) = ?', [normEmail]);
     if (existingUser) {
@@ -642,9 +643,7 @@ router.put('/students/:id', authenticateToken, requireRole('Admin', 'Instructor'
     }
 
     // Update user info if provided (profile_image stored permanently in users table)
-    const normProfileImage = (updates.profile_image != null && String(updates.profile_image).trim() !== '')
-      ? String(updates.profile_image).trim()
-      : null;
+    const normProfileImage = normalizeProfileImage(updates.profile_image);
     if (updates.name || updates.phone || updates.profile_image !== undefined) {
       const userUpdates = [];
       const userParams = [];
@@ -775,6 +774,7 @@ router.post('/instructors', authenticateToken, requireRole('Admin', 'DepartmentH
 ], async (req, res) => {
   try {
     const { email, name, username, phone, specialization, courses_assigned, password, profile_image } = req.body;
+    const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
 
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
     if (existingUser) {
@@ -787,7 +787,7 @@ router.post('/instructors', authenticateToken, requireRole('Admin', 'DepartmentH
     const userResult = await db.run(
       `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
-      [email, username || email.split('@')[0], passwordHash, 'Instructor', name, phone || null, profile_image || null]
+      [email, username || email.split('@')[0], passwordHash, 'Instructor', name, phone || null, normalizedProfileImage]
     );
 
     const instructorId = generateInstructorId();
@@ -865,7 +865,7 @@ router.put('/instructors/:id', authenticateToken, requireRole('Admin', 'Departme
       }
       if (updates.profile_image !== undefined) {
         userUpdates.push('profile_image = ?');
-        userParams.push(updates.profile_image);
+        userParams.push(normalizeProfileImage(updates.profile_image));
       }
       if (userUpdates.length > 0) {
         userParams.push(instructor.user_id);

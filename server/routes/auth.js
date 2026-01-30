@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { hashPassword, comparePassword, generateToken, authenticateToken } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
 const { sendOTP, sendPasswordReset } = require('../utils/email');
+const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const crypto = require('crypto');
 
 // Generate OTP
@@ -247,8 +248,9 @@ router.put('/profile', authenticateToken, async (req, res) => {
       params.push(phone);
     }
     if (profile_image !== undefined) {
+      const normalizedProfileImage = normalizeProfileImage(profile_image);
       updateFields.push('profile_image = ?');
-      params.push(profile_image);
+      params.push(normalizedProfileImage);
     }
 
     if (updateFields.length === 0) {

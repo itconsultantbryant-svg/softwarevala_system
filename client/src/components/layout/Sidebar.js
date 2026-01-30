@@ -249,7 +249,8 @@ const Sidebar = () => {
     items.push(
       { path: '/finance/petty-cash', label: 'Petty Cash', icon: 'bi-cash', roles: ['Admin', 'DepartmentHead'], finance: true },
       { path: '/finance/petty-cash-ledger', label: 'Petty Cash Ledger', icon: 'bi-journal-text', roles: ['Admin', 'DepartmentHead'], finance: true },
-      { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box', roles: ['Admin', 'DepartmentHead'], finance: true }
+      { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box', roles: ['Admin', 'DepartmentHead'], finance: true },
+      { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['Admin', 'DepartmentHead'], finance: true }
     );
 
     // Common menus for all roles

@@ -129,10 +129,11 @@ const AssetRegistry = () => {
 
   const fetchStaffMembers = async () => {
     try {
-      const response = await api.get('/staff');
+      const response = await api.get('/finance/assets/staff');
       setStaffMembers(response.data.staff || []);
     } catch (error) {
       console.error('Error fetching staff:', error);
+      setStaffMembers([]);
     }
   };
 

@@ -5,6 +5,7 @@ const db = require('../config/database');
 const { authenticateToken, requireRole, requireStaffManagement } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
 const { hashPassword } = require('../utils/auth');
+const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const crypto = require('crypto');
 
 // Generate unique staff ID
@@ -202,6 +203,7 @@ router.post('/', authenticateToken, requireStaffManagement, [
     const {
       email, name, username, phone, profile_image, password
     } = req.body;
+    const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
 
     // Check if user exists
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
@@ -219,7 +221,7 @@ router.post('/', authenticateToken, requireStaffManagement, [
     const userResult = await db.run(
       `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1)`,
-      [email, username || email.split('@')[0], passwordHash, 'Staff', name, phone || null, profile_image || null]
+      [email, username || email.split('@')[0], passwordHash, 'Staff', name, phone || null, normalizedProfileImage]
     );
 
     // Generate staff ID
@@ -378,7 +380,7 @@ router.put('/:id', authenticateToken, requireStaffManagement, async (req, res) =
       }
       if (updates.profile_image !== undefined) {
         userUpdates.push('profile_image = ?');
-        userParams.push(updates.profile_image);
+        userParams.push(normalizeProfileImage(updates.profile_image));
       }
       if (updates.password) {
         userUpdates.push('password_hash = ?');
