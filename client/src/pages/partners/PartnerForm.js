@@ -55,9 +55,10 @@ const PartnerForm = ({ partner, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'partner');
-
-      const response = await api.post('/upload/entity-image', fd, {
+      const uploadUrl = partner?.id
+        ? `/upload/entity-image/partner/${partner.id}`
+        : '/upload/entity-image';
+      const response = await api.post(uploadUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

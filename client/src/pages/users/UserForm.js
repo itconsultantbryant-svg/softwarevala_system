@@ -54,9 +54,10 @@ const UserForm = ({ user, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'user');
-
-      const response = await api.post('/upload/entity-image', fd, {
+      const uploadUrl = user?.id
+        ? `/upload/entity-image/user/${user.id}`
+        : '/upload/entity-image';
+      const response = await api.post(uploadUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

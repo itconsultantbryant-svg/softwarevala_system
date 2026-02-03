@@ -115,9 +115,9 @@ const StaffForm = ({ staff, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'staff');
-
-      const response = await api.post('/upload/entity-image', fd, {
+      const staffId = staff?.id || staff?.staff_id || staff?.user_id;
+      const uploadUrl = staffId ? `/upload/entity-image/staff/${staffId}` : '/upload/entity-image';
+      const response = await api.post(uploadUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

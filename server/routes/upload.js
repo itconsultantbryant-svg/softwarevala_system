@@ -148,6 +148,67 @@ router.post('/entity-image', authenticateToken, uploadEntityImage.single('image'
   }
 });
 
+// Upload entity image and persist to user record (student/staff/instructor/client/partner/user)
+router.post('/entity-image/:entityType/:entityId', authenticateToken, uploadEntityImage.single('image'), async (req, res) => {
+  const db = require('../config/database');
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const entityType = String(req.params.entityType || '').toLowerCase();
+    const entityId = req.params.entityId;
+
+    const fileBuffer = fs.readFileSync(req.file.path);
+    const base64 = fileBuffer.toString('base64');
+    const dataUrl = `data:${req.file.mimetype};base64,${base64}`;
+
+    try {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+    } catch (cleanupError) {
+      console.warn('Entity image cleanup warning:', cleanupError.message);
+    }
+
+    let userRow = null;
+    if (entityType === 'student') {
+      userRow = await db.get('SELECT user_id FROM students WHERE id = ? OR student_id = ?', [entityId, entityId]);
+    } else if (entityType === 'staff') {
+      userRow = await db.get('SELECT user_id FROM staff WHERE id = ? OR staff_id = ?', [entityId, entityId]);
+    } else if (entityType === 'instructor') {
+      userRow = await db.get('SELECT user_id FROM instructors WHERE id = ? OR instructor_id = ?', [entityId, entityId]);
+    } else if (entityType === 'client') {
+      userRow = await db.get('SELECT user_id FROM clients WHERE id = ? OR client_id = ?', [entityId, entityId]);
+    } else if (entityType === 'partner') {
+      userRow = await db.get('SELECT user_id FROM partners WHERE id = ? OR partner_id = ?', [entityId, entityId]);
+    } else if (entityType === 'user') {
+      userRow = await db.get('SELECT id as user_id FROM users WHERE id = ?', [entityId]);
+    }
+
+    if (!userRow || !userRow.user_id) {
+      return res.status(404).json({ error: 'Entity not found' });
+    }
+
+    await db.run('UPDATE users SET profile_image = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [dataUrl, userRow.user_id]);
+
+    res.json({
+      message: 'Image uploaded and saved successfully',
+      imageUrl: dataUrl,
+      url: dataUrl
+    });
+  } catch (error) {
+    console.error('Entity image upload error:', error);
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'Image size too large. Maximum size is 5MB.' });
+    }
+    if (error.message && error.message.includes('Only image files')) {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Failed to upload image. Please try again.' });
+  }
+});
+
 // Upload communication attachment (authenticated users)
 router.post('/communication', authenticateToken, uploadCommunications.single('file'), (req, res) => {
   try {

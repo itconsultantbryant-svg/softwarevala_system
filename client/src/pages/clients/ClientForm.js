@@ -72,9 +72,10 @@ const ClientForm = ({ client, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'client');
-
-      const response = await api.post('/upload/entity-image', fd, {
+      const uploadUrl = client?.id
+        ? `/upload/entity-image/client/${client.id}`
+        : '/upload/entity-image';
+      const response = await api.post(uploadUrl, fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 

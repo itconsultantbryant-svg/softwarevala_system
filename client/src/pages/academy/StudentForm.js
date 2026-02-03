@@ -86,9 +86,11 @@ const StudentForm = ({ student, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'student');
 
-      const res = await api.post('/upload/entity-image', fd);
+      const uploadUrl = student?.id
+        ? `/upload/entity-image/student/${student.id}`
+        : '/upload/entity-image';
+      const res = await api.post(uploadUrl, fd);
       const url = (res.data?.imageUrl ?? res.data?.url ?? '').toString().trim();
       if (!url) {
         setError('Upload succeeded but no image URL was returned.');

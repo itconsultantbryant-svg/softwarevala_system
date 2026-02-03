@@ -64,9 +64,10 @@ const InstructorForm = ({ instructor, courses, onClose }) => {
     try {
       const fd = new FormData();
       fd.append('image', file);
-      fd.append('type', 'instructor');
-
-      const response = await api.post('/upload/entity-image', fd);
+      const uploadUrl = instructor?.id
+        ? `/upload/entity-image/instructor/${instructor.id}`
+        : '/upload/entity-image';
+      const response = await api.post(uploadUrl, fd);
       const imageUrl = response.data?.imageUrl || '';
       setFormData(prev => ({ ...prev, profile_image: imageUrl }));
     } catch (err) {
