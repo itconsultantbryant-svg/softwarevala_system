@@ -29,6 +29,23 @@ body {
   color: var(--black);
 }
 
+body.sidebar-open {
+  overflow: hidden;
+}
+
+body.sidebar-open::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 900;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
@@ -136,9 +153,75 @@ code {
   max-height: calc(100vh - 200px);
 }
 
+.modal-dialog {
+  max-width: 900px;
+}
+
+.modal-dialog.modal-lg,
+.modal-dialog.modal-xl {
+  max-width: 1100px;
+}
+
+.modal-content {
+  max-height: calc(100vh - 2rem);
+}
+
+.form-control,
+.form-select,
+textarea {
+  width: 100%;
+  max-width: 100%;
+}
+
 /* Ensure all pages can scroll */
 .page-content {
   overflow-x: hidden;
   overflow-y: auto;
   min-height: calc(100vh - 120px);
+}
+
+@media (max-width: 768px) {
+  .container,
+  .container-fluid {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .card-body {
+    padding: 1rem;
+  }
+
+  .modal-dialog {
+    margin: 0.5rem;
+    max-width: calc(100vw - 1rem);
+  }
+
+  .modal-content {
+    max-height: calc(100vh - 1rem);
+  }
+
+  .table-responsive {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+@media (max-width: 576px) {
+  .row > [class*="col-md-"],
+  .row > [class*="col-lg-"],
+  .row > [class*="col-xl-"] {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+
+  .btn-group,
+  .input-group {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .input-group > .form-control,
+  .input-group > .form-select,
+  .input-group > .btn {
+    width: 100%;
+  }
 }

@@ -331,8 +331,8 @@ const Profile = () => {
                       alt={formData.name || 'Profile'}
                       className="img-fluid rounded-circle"
                       style={{ 
-                        width: '150px', 
-                        height: '150px', 
+                        width: 'clamp(96px, 28vw, 150px)', 
+                        height: 'clamp(96px, 28vw, 150px)', 
                         objectFit: 'cover', 
                         border: '4px solid #dee2e6', 
                         display: 'block',
@@ -361,8 +361,8 @@ const Profile = () => {
                   <div
                     className="bg-info rounded-circle d-inline-flex align-items-center justify-content-center profile-placeholder"
                     style={{
-                      width: '150px',
-                      height: '150px',
+                      width: 'clamp(96px, 28vw, 150px)',
+                      height: 'clamp(96px, 28vw, 150px)',
                       display: formData.profile_image ? 'none' : 'flex',
                       border: '4px solid #dee2e6',
                       position: 'absolute',

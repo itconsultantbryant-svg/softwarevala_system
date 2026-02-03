@@ -87,8 +87,8 @@
 }
 
 .student-portal__avatar {
-  width: 100px;
-  height: 100px;
+  width: clamp(72px, 22vw, 100px);
+  height: clamp(72px, 22vw, 100px);
   border-radius: 50%;
   object-fit: cover;
   border: 3px solid #e9ecef;
@@ -96,8 +96,8 @@
 }
 
 .student-portal__avatar-placeholder {
-  width: 100px;
-  height: 100px;
+  width: clamp(72px, 22vw, 100px);
+  height: clamp(72px, 22vw, 100px);
   border-radius: 50%;
   background: linear-gradient(145deg, #e9ecef 0%, #dee2e6 100%);
   border: 3px solid #e9ecef;
@@ -238,8 +238,8 @@
 }
 
 .student-portal__action-icon {
-  width: 48px;
-  height: 48px;
+  width: clamp(40px, 12vw, 48px);
+  height: clamp(40px, 12vw, 48px);
   border-radius: var(--student-radius-sm);
   display: flex;
   align-items: center;

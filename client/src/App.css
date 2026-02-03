@@ -38,15 +38,11 @@
 
 @media (max-width: 768px) {
   .main-content-wrapper {
-    margin-left: 70px;
-    padding: 15px;
+    margin-left: 0;
+    padding: 12px;
   }
   
-  .sidebar {
-    width: 70px;
-  }
-  
-  .sidebar.collapsed {
-    width: 70px;
+  .main-content-wrapper > * {
+    padding: 16px;
   }
 }

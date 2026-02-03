@@ -694,6 +694,77 @@ router.put('/students/:id', authenticateToken, requireRole('Admin', 'Instructor'
       await db.run(`UPDATE students SET ${studentUpdates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, studentParams);
     }
 
+    if (updates.courses_enrolled !== undefined) {
+      let desiredCourseIds = [];
+      if (Array.isArray(updates.courses_enrolled)) {
+        desiredCourseIds = updates.courses_enrolled.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
+      } else if (updates.courses_enrolled) {
+        try {
+          desiredCourseIds = JSON.parse(updates.courses_enrolled)
+            .map(id => parseInt(id, 10))
+            .filter(id => !isNaN(id));
+        } catch (e) {
+          desiredCourseIds = String(updates.courses_enrolled)
+            .replace(/[\[\]]/g, '')
+            .split(',')
+            .map(id => parseInt(id.trim(), 10))
+            .filter(id => !isNaN(id));
+        }
+      }
+
+      const uniqueDesiredIds = Array.from(new Set(desiredCourseIds));
+
+      const existingEnrollments = await db.all(
+        'SELECT course_id, status FROM student_course_enrollments WHERE student_id = ?',
+        [studentId]
+      );
+      const existingCourseIds = new Set(existingEnrollments.map(row => row.course_id));
+
+      const enrollmentDate = updates.enrollment_date || new Date().toISOString().split('T')[0];
+
+      for (const courseId of uniqueDesiredIds) {
+        if (existingCourseIds.has(courseId)) {
+          await db.run(
+            `UPDATE student_course_enrollments
+             SET status = 'Enrolled', updated_at = CURRENT_TIMESTAMP
+             WHERE student_id = ? AND course_id = ?`,
+            [studentId, courseId]
+          );
+        } else {
+          await db.run(
+            `INSERT INTO student_course_enrollments (student_id, user_id, course_id, enrollment_date, status)
+             VALUES (?, ?, ?, ?, 'Enrolled')`,
+            [studentId, student.user_id, courseId, enrollmentDate]
+          );
+        }
+
+        const existingPayment = await db.get(
+          'SELECT id FROM student_payments WHERE student_id = ? AND course_id = ?',
+          [studentId, courseId]
+        );
+        if (!existingPayment) {
+          const course = await db.get('SELECT course_fee FROM courses WHERE id = ?', [courseId]);
+          const courseFee = course ? course.course_fee || 0 : 0;
+          await db.run(
+            `INSERT INTO student_payments (student_id, user_id, course_id, course_fee, amount_paid, balance)
+             VALUES (?, ?, ?, ?, 0, ?)`,
+            [studentId, student.user_id, courseId, courseFee, courseFee]
+          );
+        }
+      }
+
+      for (const enrollment of existingEnrollments) {
+        if (!uniqueDesiredIds.includes(enrollment.course_id) && enrollment.status !== 'Dropped') {
+          await db.run(
+            `UPDATE student_course_enrollments
+             SET status = 'Dropped', updated_at = CURRENT_TIMESTAMP
+             WHERE student_id = ? AND course_id = ?`,
+            [studentId, enrollment.course_id]
+          );
+        }
+      }
+    }
+
     await logAction(req.user.id, 'update_student', 'academy', studentId, updates, req);
 
     res.json({ message: 'Student updated successfully' });

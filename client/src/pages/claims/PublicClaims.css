@@ -69,3 +69,13 @@
   color: #dc3545;
 }
 
+@media (max-width: 576px) {
+  .public-claims-container {
+    padding: 1.25rem;
+  }
+
+  .public-claims-card {
+    padding: 1.5rem;
+  }
+}
+

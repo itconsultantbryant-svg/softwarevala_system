@@ -12,10 +12,28 @@ const TopBar = () => {
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const notificationBtnRef = useRef(null);
   const profileBtnRef = useRef(null);
   const notificationDropdownRef = useRef(null);
   const profileDropdownRef = useRef(null);
+
+  useEffect(() => {
+    document.body.classList.toggle('sidebar-open', isSidebarOpen);
+    return () => {
+      document.body.classList.remove('sidebar-open');
+    };
+  }, [isSidebarOpen]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768 && isSidebarOpen) {
+        setIsSidebarOpen(false);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isSidebarOpen]);
 
   // Position dropdowns dynamically
   useEffect(() => {
@@ -349,6 +367,15 @@ const TopBar = () => {
     <div className="topbar">
       <div className="topbar-content">
         <div className="topbar-left">
+          <button
+            type="button"
+            className="topbar-menu-btn"
+            aria-label={isSidebarOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isSidebarOpen}
+            onClick={() => setIsSidebarOpen(prev => !prev)}
+          >
+            <i className={`bi ${isSidebarOpen ? 'bi-x-lg' : 'bi-list'}`}></i>
+          </button>
           <img 
             src="/prinstine-logo.png" 
             alt="Prinstine Group" 
