@@ -82,6 +82,8 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
     const startTime = new Date();
     startTime.setHours(9, 0, 0, 0);
     const isLate = now > startTime;
+    const status = isLate ? 'Pending' : 'Approved';
+    const approvedAt = isLate ? null : now.toISOString();
 
     const existing = await db.get(
       `
@@ -105,9 +107,10 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         sign_in_time,
         sign_in_late,
         sign_in_late_reason,
-        status
+        status,
+        approved_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, 'Pending')
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         userId,
@@ -115,7 +118,9 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         today,
         now.toISOString(),
         isLate ? 1 : 0,
-        isLate ? req.body?.late_reason || null : null
+        isLate ? req.body?.late_reason || null : null,
+        status,
+        approvedAt
       ]
     );
 
@@ -159,12 +164,37 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Already signed out today' });
     }
 
+    let newStatus = attendance.status || 'Pending';
+    let newApprovedBy = attendance.approved_by || null;
+    let newApprovedAt = attendance.approved_at || null;
+    let newAdminNotes = attendance.admin_notes || null;
+
+    if (isEarly) {
+      if (attendance.status !== 'Rejected') {
+        newStatus = 'Pending';
+        newApprovedBy = null;
+        newApprovedAt = null;
+        newAdminNotes = null;
+      }
+    } else if (!attendance.sign_in_late) {
+      if (attendance.status !== 'Rejected') {
+        newStatus = 'Approved';
+        newApprovedBy = null;
+        newApprovedAt = now.toISOString();
+        newAdminNotes = null;
+      }
+    }
+
     await db.run(
       `
       UPDATE staff_attendance
       SET sign_out_time = ?,
           sign_out_early = ?,
           sign_out_early_reason = ?,
+          status = ?,
+          approved_by = ?,
+          approved_at = ?,
+          admin_notes = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
@@ -172,6 +202,10 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
         now.toISOString(),
         isEarly ? 1 : 0,
         isEarly ? req.body?.early_reason || null : null,
+        newStatus,
+        newApprovedBy,
+        newApprovedAt,
+        newAdminNotes,
         attendance.id
       ]
     );
