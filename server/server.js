@@ -2467,11 +2467,45 @@ if (fs.existsSync(buildPath)) {
   });
 }
 
+/**
+ * One-time sync: set target_progress.status = 'Approved' for any row linked to an
+ * already-approved progress_report. Fixes historical data where the report was approved
+ * but the target_progress row was left as Pending (so the target total did not increase).
+ * Safe to run on every startup (idempotent).
+ */
+async function syncApprovedProgressReportsToTargets() {
+  try {
+    const USE_POSTGRESQL = !!process.env.DATABASE_URL;
+    let tableExists;
+    if (USE_POSTGRESQL) {
+      tableExists = await db.get(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'target_progress'"
+      );
+    } else {
+      tableExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='target_progress'");
+    }
+    if (!tableExists) return;
+
+    const result = await db.run(
+      `UPDATE target_progress SET status = 'Approved'
+       WHERE progress_report_id IN (SELECT id FROM progress_reports WHERE status = 'Approved')
+       AND (status IS NULL OR TRIM(COALESCE(status, '')) <> 'Approved')`
+    );
+    const updated = result.changes || result.rowCount || 0;
+    if (updated > 0) {
+      console.log(`[sync] Updated ${updated} target_progress row(s) to Approved for already-approved progress reports`);
+    }
+  } catch (err) {
+    console.error('[sync] Non-fatal: sync approved progress to targets failed:', err.message);
+  }
+}
+
 // Start server
 async function startServer() {
   try {
     await initializeDatabase();
-    
+    await syncApprovedProgressReportsToTargets();
+
     // Start periodic database checkpointing for data persistence
     startPeriodicCheckpoint();
     

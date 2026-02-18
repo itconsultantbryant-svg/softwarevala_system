@@ -470,19 +470,17 @@ const Targets = () => {
         await fetchTargetProgress(response.data.target.id);
       }
       
-      // Don't call fetchTargets() - socket event will handle the update, but wait a bit for socket
+      // Refetch targets so the target area shows updated totals (progress increases)
+      fetchTargets(true);
       setTimeout(() => {
-        // Verify update after socket event should have fired
-        if (response.data && response.data.target) {
-          const target = targets.find(t => t.id === response.data.target.id);
-          if (target && parseFloat(target.net_amount || 0) === 0 && parseFloat(response.data.target.net_amount || 0) > 0) {
-            // Socket event might have missed, force update
-            setTargets(prevTargets => prevTargets.map(t => 
-              t.id === response.data.target.id ? { ...t, ...response.data.target } : t
-            ));
-          }
+        if (response.data?.target && parseFloat(response.data.target.total_progress || 0) > 0) {
+          setTargets(prev => prev.map(t =>
+            t.id === response.data.target.id
+              ? { ...t, ...response.data.target, _lastUpdate: Date.now() }
+              : t
+          ));
         }
-      }, 1000);
+      }, 400);
     } catch (err) {
       const isNetworkError = err.code === 'ERR_NETWORK' || 
                             err.code === 'ERR_INTERNET_DISCONNECTED';

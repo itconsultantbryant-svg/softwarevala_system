@@ -38,22 +38,30 @@ async function isAcademyStaff(user) {
     return true;
   }
   
-  // Explicit email check for Assistant Academy Coordinator (cvulue@prinstinegroup.org)
-  // This ensures the user has full academy rights regardless of department field
+  // Explicit email allowlist: Academy coordinators and Academy Head (full academy rights regardless of department)
   const userEmail = (user.email || '').toLowerCase().trim();
-  const academyCoordinatorEmails = ['samsonbryant89@gmail.com'];
+  const academyCoordinatorEmails = ['samsonbryant89@gmail.com', 'cvulue@prinstinegroup.org'];
   const academyHeadEmails = ['fwallace@prinstinegroup.org'];
   if (academyCoordinatorEmails.includes(userEmail) || academyHeadEmails.includes(userEmail)) {
-    console.log(`[isAcademyStaff] User ${userEmail} identified as Assistant Academy Coordinator via email`);
+    console.log(`[isAcademyStaff] User ${userEmail} identified as Academy staff via email allowlist`);
     return true;
   }
   
   // Check if DepartmentHead manages Academy department (Academy Department Head)
   if (user.role === 'DepartmentHead') {
     try {
-      const deptTableInfo = await db.all("PRAGMA table_info(departments)");
-      const deptColumnNames = deptTableInfo.map(col => col.name);
-      const hasHeadEmail = deptColumnNames.includes('head_email');
+      const USE_POSTGRESQL = !!process.env.DATABASE_URL;
+      let hasHeadEmail = false;
+      if (USE_POSTGRESQL) {
+        const col = await db.get(
+          "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'departments' AND column_name = 'head_email'"
+        );
+        hasHeadEmail = !!col;
+      } else {
+        const deptTableInfo = await db.all("PRAGMA table_info(departments)");
+        const deptColumnNames = (deptTableInfo || []).map(col => col.name);
+        hasHeadEmail = deptColumnNames.includes('head_email');
+      }
       
       let dept;
       if (hasHeadEmail) {
@@ -69,7 +77,7 @@ async function isAcademyStaff(user) {
       }
       
       if (dept && dept.name) {
-        const deptName = dept.name.toLowerCase();
+        const deptName = (dept.name || '').toLowerCase();
         if (deptName.includes('academy') || deptName.includes('elearning') || deptName.includes('e-learning') || deptName.includes('marketing')) {
           return true;
         }
@@ -80,8 +88,6 @@ async function isAcademyStaff(user) {
   }
   
   // Check if Staff belongs to Academy department (Assistant Academy Coordinator)
-  // Assistant Academy Coordinator = Staff member in Academy/eLearning department
-  // They have the same managing rights as Academy Department Head
   if (user.role === 'Staff') {
     try {
       const staff = await db.get('SELECT department, position FROM staff WHERE user_id = ?', [user.id]);
@@ -89,20 +95,17 @@ async function isAcademyStaff(user) {
         const deptName = (staff.department || '').toLowerCase();
         const positionName = (staff.position || '').toLowerCase();
         
-        // Check if staff is in Academy department
         if (deptName.includes('academy') || deptName.includes('elearning') || deptName.includes('e-learning')) {
           console.log(`[isAcademyStaff] User ${userEmail} identified as Academy staff via department: ${staff.department}`);
           return true;
         }
-        
-        // Also check if position title indicates Academy Coordinator (additional check)
         if (positionName.includes('academy') && positionName.includes('coordinator')) {
           console.log(`[isAcademyStaff] User ${userEmail} identified as Academy Coordinator via position: ${staff.position}`);
           return true;
         }
       }
     } catch (error) {
-      console.error('Error checking staff department:', error);
+      console.error('Error checking staff department (non-fatal):', error);
     }
   }
   

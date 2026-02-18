@@ -306,7 +306,7 @@ async function updateAdminTarget(periodStart = null) {
       const progressResult = await db.get(
         `SELECT COALESCE(SUM(CASE 
            WHEN tp.status = 'Approved' OR UPPER(TRIM(COALESCE(tp.status, ''))) = 'APPROVED' OR tp.status IS NULL OR tp.status = ''
-           THEN COALESCE(CAST(tp.amount AS NUMERIC), CAST(tp.progress_amount AS NUMERIC), 0)
+           THEN COALESCE(CAST(tp.amount AS NUMERIC), 0)
            ELSE 0
          END), 0) as total,
          COUNT(CASE 
@@ -811,7 +811,7 @@ router.put('/progress/:id/approve', authenticateToken, requireRole('Admin'), [
     const approvedSum = await db.get(
       `SELECT COALESCE(SUM(CASE 
          WHEN status = 'Approved' OR UPPER(TRIM(COALESCE(status, ''))) = 'APPROVED' OR status IS NULL OR status = ''
-         THEN COALESCE(CAST(amount AS NUMERIC), CAST(progress_amount AS NUMERIC), 0)
+         THEN COALESCE(CAST(amount AS NUMERIC), 0)
          ELSE 0
        END), 0) as total,
        COUNT(CASE 
