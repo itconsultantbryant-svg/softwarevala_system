@@ -86,9 +86,12 @@ router.get('/', authenticateToken, async (req, res) => {
     // Non-admin users see:
     // 1. Documents assigned to them (user_id = their id)
     // 2. Documents they uploaded (uploaded_by = their id)
+    // Use CAST so string/number id mismatch (e.g. SQLite vs PostgreSQL) doesn't hide rows
     if (req.user.role !== 'Admin') {
-      query += ' AND (ad.user_id = ? OR ad.uploaded_by = ?)';
-      params.push(req.user.id, req.user.id);
+      const userId = req.user.id;
+      const userIdNum = parseInt(userId, 10);
+      query += ' AND (CAST(ad.user_id AS TEXT) = CAST(? AS TEXT) OR CAST(ad.uploaded_by AS TEXT) = CAST(? AS TEXT))';
+      params.push(userIdNum, userIdNum);
     }
     
     query += ' ORDER BY ad.created_at DESC';
@@ -119,9 +122,11 @@ router.get('/:id', authenticateToken, async (req, res) => {
     const params = [req.params.id];
     
     // Non-admin users can see documents assigned to them or uploaded by them
+    // Use CAST so string/number id mismatch doesn't hide documents
     if (req.user.role !== 'Admin') {
-      query += ' AND (ad.user_id = ? OR ad.uploaded_by = ?)';
-      params.push(req.user.id, req.user.id);
+      const userIdNum = parseInt(req.user.id, 10);
+      query += ' AND (CAST(ad.user_id AS TEXT) = CAST(? AS TEXT) OR CAST(ad.uploaded_by AS TEXT) = CAST(? AS TEXT))';
+      params.push(userIdNum, userIdNum);
     }
     
     const document = await db.get(query, params);
@@ -217,8 +222,11 @@ router.delete('/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    // Only owner or admin can delete
-    if (document.user_id !== req.user.id && req.user.role !== 'Admin') {
+    // Only owner or admin can delete (compare as numbers to avoid string/id mismatch)
+    const docUserId = parseInt(document.user_id, 10);
+    const docUploadedBy = parseInt(document.uploaded_by, 10);
+    const reqUserId = parseInt(req.user.id, 10);
+    if (docUserId !== reqUserId && docUploadedBy !== reqUserId && req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'You can only delete your own documents' });
     }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { initSocket, getSocket } from '../../config/socket';
@@ -6,6 +7,7 @@ import { handleAttachmentAction } from '../../utils/documentUtils';
 
 const Notifications = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [thread, setThread] = useState(null);
@@ -129,6 +131,12 @@ const Notifications = () => {
       } catch (error) {
         console.error('Error marking as read:', error);
       }
+    }
+    
+    // Redirect to linked page/section when notification has a link
+    const link = notification.link || notification.link_url;
+    if (link && typeof link === 'string' && link.startsWith('/')) {
+      navigate(link);
     }
   };
 
