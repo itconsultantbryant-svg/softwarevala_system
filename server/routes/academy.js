@@ -497,6 +497,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
         const code = err.code || err.errno;
         return code === 'SQLITE_CONSTRAINT' || code === '23505' || msg.includes('unique') || msg.includes('duplicate');
       };
+      const isPkeyDuplicate = (err) => (err.message || '').includes('pkey') && (err.message || '').includes('duplicate');
       let userResult;
       try {
         userResult = await db.run(
@@ -506,27 +507,49 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
         );
       } catch (userErr) {
         if (isUniqueError(userErr)) {
-          const again = await db.get('SELECT id, role FROM users WHERE LOWER(TRIM(email)) = ? OR email = ?', [normEmail, normEmail]);
-          if (again) {
-            newUserId = again.id;
-            const existingStudent = await db.get('SELECT id, student_id FROM students WHERE user_id = ?', [newUserId]);
-            if (existingStudent) {
-              return res.status(400).json({
-                error: 'This email is already registered as a student. You can edit the existing student from the students list.'
-              });
+          if (isPkeyDuplicate(userErr)) {
+            for (const tableName of ['users', 'users_new']) {
+              try {
+                await db.run(`SELECT setval(pg_get_serial_sequence('${tableName}', 'id'), (SELECT COALESCE(MAX(id), 1) FROM ${tableName}))`);
+                break;
+              } catch (e) {
+                if (tableName === 'users_new') console.error('Create student – sequence sync error:', e.message);
+              }
             }
-            const updates = [];
-            const params = [];
-            if (name) { updates.push('name = ?'); params.push(name); }
-            if (phone !== undefined) { updates.push('phone = ?'); params.push(phone || null); }
-            if (normProfileImage !== undefined && normProfileImage !== null) { updates.push('profile_image = ?'); params.push(normProfileImage); }
-            if (updates.length > 0) {
-              params.push(newUserId);
-              await db.run(`UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, params);
+            try {
+              userResult = await db.run(
+                `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+                [normEmail, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, approved]
+              );
+            } catch (retryErr) {
+              if (!isUniqueError(retryErr)) throw retryErr;
+              userErr = retryErr;
             }
-          } else {
-            console.error('Create student – user insert unique error but no user found by email:', userErr.message);
-            throw userErr;
+          }
+          if (userResult == null) {
+            const again = await db.get('SELECT id, role FROM users WHERE LOWER(TRIM(email)) = ? OR email = ?', [normEmail, normEmail]);
+            if (again) {
+              newUserId = again.id;
+              const existingStudent = await db.get('SELECT id, student_id FROM students WHERE user_id = ?', [newUserId]);
+              if (existingStudent) {
+                return res.status(400).json({
+                  error: 'This email is already registered as a student. You can edit the existing student from the students list.'
+                });
+              }
+              const updates = [];
+              const params = [];
+              if (name) { updates.push('name = ?'); params.push(name); }
+              if (phone !== undefined) { updates.push('phone = ?'); params.push(phone || null); }
+              if (normProfileImage !== undefined && normProfileImage !== null) { updates.push('profile_image = ?'); params.push(normProfileImage); }
+              if (updates.length > 0) {
+                params.push(newUserId);
+                await db.run(`UPDATE users SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, params);
+              }
+            } else {
+              console.error('Create student – user insert unique error but no user found by email:', userErr.message);
+              throw userErr;
+            }
           }
         } else {
           console.error('Create student – user insert error:', userErr.code, userErr.message);
