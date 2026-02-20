@@ -464,9 +464,20 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
     const coursesArray = Array.isArray(courses_enrolled) ? courses_enrolled.map(c => parseInt(c, 10)).filter(n => !isNaN(n)) : [];
     const coursesEnrolledJson = coursesArray.length > 0 ? JSON.stringify(coursesArray) : null;
 
-    // Unique username to avoid clashes (email local part + short random suffix)
-    const baseUsername = (username && String(username).trim()) || emailToStore.split('@')[0] || 'student';
-    const safeUsername = baseUsername.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 50);
+    // Username: must be unique across all users. Use email-based value and ensure no collision.
+    const basePart = (username && String(username).trim()) || (emailToStore && emailToStore.split('@')[0]) || 'student';
+    const sanitized = basePart.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 45);
+    let finalUsername = sanitized || 'student';
+    let exists = await db.get('SELECT id FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))', [finalUsername]);
+    if (exists) {
+      const suffix = Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 5);
+      finalUsername = (sanitized || 'student').slice(0, 40) + '_' + suffix;
+      exists = await db.get('SELECT id FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(?))', [finalUsername]);
+      if (exists) {
+        finalUsername = 'stu_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      }
+    }
+    const usernameToStore = finalUsername.slice(0, 255);
 
     let userResult;
     let result;
@@ -474,14 +485,19 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
       userResult = await db.run(
         `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [emailToStore, safeUsername, passwordHash, 'Student', name, phone || null, normProfileImage, approved]
+        [emailToStore, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, approved]
       );
     } catch (userErr) {
-      const msg = (userErr.message || '').toLowerCase();
       const code = userErr.code;
-      if (code === 'SQLITE_CONSTRAINT' || code === '23505' || msg.includes('unique') || msg.includes('duplicate')) {
-        return res.status(400).json({ error: 'A user with this email or username already exists' });
+      const msg = (userErr.message || '').toLowerCase();
+      const isUniqueViolation = code === 'SQLITE_CONSTRAINT' || code === '23505' || msg.includes('unique') || msg.includes('duplicate');
+      if (isUniqueViolation) {
+        if (msg.includes('email') || msg.includes('username')) {
+          return res.status(400).json({ error: 'A user with this email or username already exists. Please use a different email.' });
+        }
+        return res.status(400).json({ error: 'A user with this email already exists. Please use a different email.' });
       }
+      console.error('Create student – user insert error:', userErr.message);
       throw userErr;
     }
 
@@ -563,12 +579,11 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
       student: { id: newStudentId, student_id: studentId, approved }
     });
   } catch (error) {
-    console.error('Create student error:', error);
-    const msg = (error.message || '').toLowerCase();
-    if (msg.includes('unique') || msg.includes('duplicate') || error.code === 'SQLITE_CONSTRAINT' || error.code === '23505') {
-      return res.status(400).json({ error: 'A user with this email or username already exists' });
-    }
-    res.status(500).json({ error: 'Failed to create student. Please try again or contact support.' });
+    console.error('Create student error:', error.message || error);
+    res.status(500).json({
+      error: 'Failed to create student. Please try again. If the problem continues, contact support.',
+      details: process.env.NODE_ENV === 'development' ? (error.message || String(error)) : undefined
+    });
   }
 });
 
