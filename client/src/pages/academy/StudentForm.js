@@ -164,7 +164,8 @@ const StudentForm = ({ student, onClose }) => {
 
       onClose();
     } catch (err) {
-      const message = err.response?.data?.error || err.message || 'Failed to save student';
+      const data = err.response?.data;
+      const message = data?.error || (data?.details ? `Error: ${data.details}` : null) || err.message || 'Failed to save student';
       setError(message);
     } finally {
       setLoading(false);

@@ -452,6 +452,9 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
 
     const approved = req.user.role === 'Admin' ? 1 : 0;
     const createdById = parseInt(req.user.id, 10) || req.user.id;
+    if (createdById == null || createdById === '') {
+      return res.status(400).json({ error: 'Invalid session. Please log in again.' });
+    }
     const cohortIdVal = (cohort_id !== undefined && cohort_id !== null && String(cohort_id).trim() !== '') ? parseInt(cohort_id, 10) : null;
     const periodVal = (period !== undefined && period !== null && String(period).trim() !== '') ? String(period).trim() : null;
     const enrollmentDateVal = enrollment_date && String(enrollment_date).trim() ? String(enrollment_date).trim().split('T')[0] : new Date().toISOString().split('T')[0];
@@ -612,10 +615,12 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
       student: { id: newStudentId, student_id: studentId, approved }
     });
   } catch (error) {
-    console.error('Create student error:', error.message || error);
+    const errMsg = error.message || String(error);
+    console.error('Create student error:', errMsg);
+    const isDev = process.env.NODE_ENV === 'development';
     res.status(500).json({
-      error: 'Failed to create student. Please try again. If the problem continues, contact support.',
-      details: process.env.NODE_ENV === 'development' ? (error.message || String(error)) : undefined
+      error: isDev ? `Failed to create student: ${errMsg}` : 'Failed to create student. Please try again. If the problem continues, contact support.',
+      details: isDev ? errMsg : undefined
     });
   }
 });
