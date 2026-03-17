@@ -513,7 +513,7 @@ const PettyCash = () => {
         <div className="col-md-4">
           <div className="card">
             <div className="card-body">
-              <h6 className="card-subtitle mb-2 text-muted">Net Balance</h6>
+              <h6 className="card-subtitle mb-2 text-muted">Closing Balance</h6>
               <h4 className="text-primary">{formatCurrency(summary.closing_balance)}</h4>
             </div>
           </div>

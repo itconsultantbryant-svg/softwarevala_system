@@ -119,7 +119,7 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
     let query = `
       SELECT pct.*,
              pcl.month, pcl.year,
-             cust.name as custodian_name,
+             COALESCE(cust.name, cust_direct.name) as custodian_name,
              cust_staff.staff_id as custodian_staff_id,
              creator.name as created_by_name
       FROM petty_cash_transactions pct
@@ -142,16 +142,20 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
       params.push(to_date);
     }
 
-    query += ' ORDER BY pct.transaction_date DESC, pct.id DESC';
+    // Chronological order (oldest first) so ledger reads properly: starting balance -> first tx -> ... -> closing balance
+    query += ' ORDER BY pct.transaction_date ASC, pct.id ASC';
 
     const transactions = await db.all(query, params);
 
-    // Calculate Period, Total Deposited, Total Withdrawn, Closing Balance
+    // Summary: total deposited, total withdrawn, and closing balance = last transaction's running balance (or 0 if none)
     const summary = transactions.reduce((acc, t) => {
       acc.total_deposited += parseFloat(t.amount_deposited || 0);
       acc.total_withdrawn += parseFloat(t.amount_withdrawn || 0);
       return acc;
     }, { total_deposited: 0, total_withdrawn: 0 });
+    summary.closing_balance = transactions.length > 0
+      ? parseFloat(transactions[transactions.length - 1].balance || 0)
+      : 0;
 
     // Group by period (month/year)
     const byPeriod = {};
@@ -193,10 +197,7 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
 
     res.json({ 
       transactions,
-      summary: {
-        ...summary,
-        closing_balance: summary.total_deposited - summary.total_withdrawn
-      },
+      summary,
       by_period: Object.values(byPeriod)
     });
   } catch (error) {
@@ -616,37 +617,33 @@ router.put('/petty-cash/:id', authenticateToken, [
   }
 });
 
-// Reset all petty cash balances (Admin only - for fresh start)
+// Reset all petty cash balances (Admin only - recalculates running balances in proper order)
 router.post('/petty-cash/reset-all-balances', authenticateToken, requireRole('Admin'), async (req, res) => {
   try {
-    // Reset all transaction balances to 0
-    await db.run('UPDATE petty_cash_transactions SET balance = 0');
+    // Get ledgers in chronological order (oldest first)
+    const ledgers = await db.all('SELECT id FROM petty_cash_ledgers ORDER BY year ASC, month ASC');
     
-    // Reset all ledger starting balances to 0
-    await db.run('UPDATE petty_cash_ledgers SET starting_balance = 0');
-    
-    // Recalculate balances from scratch starting from 0
-    const ledgers = await db.all('SELECT id FROM petty_cash_ledgers ORDER BY year, month');
-    
+    let previousClosingBalance = 0;
     for (const ledger of ledgers) {
+      // This period's starting balance = previous period's closing balance
+      await db.run('UPDATE petty_cash_ledgers SET starting_balance = ? WHERE id = ?', [previousClosingBalance, ledger.id]);
+
       const transactions = await db.all(
-        'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date, id',
+        'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date ASC, id ASC',
         [ledger.id]
       );
-      
-      let runningBalance = 0; // Start fresh from 0
+
+      let runningBalance = previousClosingBalance;
       for (const t of transactions) {
         runningBalance = runningBalance + (parseFloat(t.amount_deposited) || 0) - (parseFloat(t.amount_withdrawn) || 0);
         await db.run('UPDATE petty_cash_transactions SET balance = ? WHERE id = ?', [runningBalance, t.id]);
       }
-      
-      // Update ledger starting balance to 0
-      await db.run('UPDATE petty_cash_ledgers SET starting_balance = 0 WHERE id = ?', [ledger.id]);
+      previousClosingBalance = runningBalance;
     }
-    
+
     await logAction(req.user.id, 'reset_all_petty_cash_balances', 'finance', null, {}, req);
-    
-    res.json({ message: 'All petty cash balances have been reset to zero and recalculated from scratch' });
+
+    res.json({ message: 'All petty cash balances have been recalculated in chronological order.' });
   } catch (error) {
     console.error('Reset petty cash balances error:', error);
     res.status(500).json({ error: 'Failed to reset balances: ' + error.message });
@@ -765,7 +762,8 @@ router.get('/petty-cash/ledgers', authenticateToken, async (req, res) => {
       params.push(status);
     }
 
-    query += ' ORDER BY pcl.created_at DESC, pcl.year DESC, pcl.month DESC';
+    // Chronological order: oldest period first (e.g. Jan 2024, Feb 2024, ...)
+    query += ' ORDER BY pcl.year ASC, pcl.month ASC';
 
     const ledgers = await db.all(query, params);
 
