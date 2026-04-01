@@ -8,12 +8,15 @@ import StudentForm from './StudentForm';
 import CourseForm from './CourseForm';
 import InstructorForm from './InstructorForm';
 import CohortForm from './CohortForm';
+import StudentAcademyGradesTab from './StudentAcademyGradesTab';
 
 const AcademyManagement = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('courses');
   const [courses, setCourses] = useState([]);
   const [students, setStudents] = useState([]);
+  /** Full student list for grade dropdowns & Student Grade tab (not affected by Students tab filters) */
+  const [studentsForSelect, setStudentsForSelect] = useState([]);
   const [instructors, setInstructors] = useState([]);
   const [cohorts, setCohorts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,37 +52,40 @@ const AcademyManagement = () => {
   const userIsAcademyStaff = isAcademyStaff(user);
   // Check if user can approve (Admin only)
   const userCanApprove = canApproveAcademy(user);
+  const canAccessAcademyMgmt =
+    user && (user.role === 'Admin' || userIsAcademyStaff || user.role === 'Instructor');
+  const canSeeGradeQueue = user && (user.role === 'Admin' || userIsAcademyStaff);
 
-  // Refetch data when user object changes (in case department/position are loaded later)
+  // Load tab data when user becomes available or tab changes (fixes Admin not loading lists on first paint)
   useEffect(() => {
-    if (user && (userIsAcademyStaff || user.role === 'Admin' || user.role === 'Instructor')) {
-      if (activeTab === 'courses') fetchCourses();
-      else if (activeTab === 'students') fetchStudents();
-      else if (activeTab === 'instructors') fetchInstructors();
-      else if (activeTab === 'cohorts') fetchCohorts();
-      else if (activeTab === 'grades') {
-        fetchCourses();
-        fetchStudents();
-        if (userCanApprove) fetchGradesPending();
-      }
-    }
-  }, [user?.department, user?.position, user?.email]);
-
-  useEffect(() => {
-    if (activeTab === 'courses') {
-      fetchCourses();
-    } else if (activeTab === 'students') {
-      fetchStudents();
-    } else if (activeTab === 'instructors') {
-      fetchInstructors();
-    } else if (activeTab === 'cohorts') {
+    if (!canAccessAcademyMgmt) return;
+    if (activeTab === 'courses') fetchCourses();
+    else if (activeTab === 'students') {
       fetchCohorts();
-    } else if (activeTab === 'grades') {
+      fetchStudents();
+    } else if (activeTab === 'instructors') fetchInstructors();
+    else if (activeTab === 'cohorts') fetchCohorts();
+    else if (activeTab === 'grades') {
       fetchCourses();
       fetchStudents();
-      if (userCanApprove) fetchGradesPending();
+      fetchCohorts();
+      fetchStudentsUnfiltered();
+      if (canSeeGradeQueue) fetchGradesPending();
+    } else if (activeTab === 'student-grades') {
+      fetchCourses();
+      fetchCohorts();
+      fetchStudentsUnfiltered();
     }
-  }, [activeTab]);
+  }, [
+    activeTab,
+    user?.id,
+    user?.role,
+    user?.department,
+    user?.position,
+    user?.email,
+    canAccessAcademyMgmt,
+    canSeeGradeQueue
+  ]);
   
   // Fetch students when filters change
   useEffect(() => {
@@ -118,6 +124,16 @@ const AcademyManagement = () => {
       console.error('Error fetching students:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchStudentsUnfiltered = async () => {
+    try {
+      const response = await api.get('/academy/students');
+      setStudentsForSelect(response.data.students || []);
+    } catch (error) {
+      console.error('Error fetching students for selects:', error);
+      setStudentsForSelect([]);
     }
   };
   
@@ -173,7 +189,7 @@ const AcademyManagement = () => {
   };
 
   useEffect(() => {
-    if (activeTab !== 'grades' || !userCanApprove) return;
+    if (activeTab !== 'grades' || !canSeeGradeQueue) return;
     const socket = getSocket();
     if (!socket) return;
     const onNotification = (n) => {
@@ -182,7 +198,7 @@ const AcademyManagement = () => {
     };
     socket.on('notification', onNotification);
     return () => socket.off('notification', onNotification);
-  }, [activeTab, userCanApprove]);
+  }, [activeTab, canSeeGradeQueue]);
 
   const handleAddStudent = () => {
     setEditingStudent(null);
@@ -451,20 +467,38 @@ const AcademyManagement = () => {
                 className={`nav-link ${activeTab === 'grades' ? 'active' : ''}`}
                 onClick={() => setActiveTab('grades')}
               >
-                Grades {userCanApprove && gradesPending.length > 0 && <span className="badge bg-warning text-dark">{gradesPending.length}</span>}
+                Grades {canSeeGradeQueue && gradesPending.length > 0 && <span className="badge bg-warning text-dark">{gradesPending.length}</span>}
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link ${activeTab === 'student-grades' ? 'active' : ''}`}
+                onClick={() => setActiveTab('student-grades')}
+              >
+                Student Grade
               </button>
             </li>
           </>
         )}
         {user?.role === 'Instructor' && !userIsAcademyStaff && (
-          <li className="nav-item">
-            <button
-              className={`nav-link ${activeTab === 'grades' ? 'active' : ''}`}
-              onClick={() => setActiveTab('grades')}
-            >
-              Grades
-            </button>
-          </li>
+          <>
+            <li className="nav-item">
+              <button
+                className={`nav-link ${activeTab === 'grades' ? 'active' : ''}`}
+                onClick={() => setActiveTab('grades')}
+              >
+                Grades
+              </button>
+            </li>
+            <li className="nav-item">
+              <button
+                className={`nav-link ${activeTab === 'student-grades' ? 'active' : ''}`}
+                onClick={() => setActiveTab('student-grades')}
+              >
+                Student Grade
+              </button>
+            </li>
+          </>
         )}
       </ul>
 
@@ -953,7 +987,7 @@ const AcademyManagement = () => {
                         required
                       >
                         <option value="">Select student</option>
-                        {students.filter(s => s.approved === 1 || s.approved === true).map((s) => (
+                        {studentsForSelect.filter(s => s.approved === 1 || s.approved === true).map((s) => (
                           <option key={s.id} value={s.id}>{s.name} ({s.student_id})</option>
                         ))}
                       </select>
@@ -992,10 +1026,10 @@ const AcademyManagement = () => {
               </div>
             </div>
           )}
-          {userCanApprove && (
+          {canSeeGradeQueue && (
             <div className={userIsAcademyStaff || user?.role === 'Instructor' ? 'col-lg-7' : 'col-12'}>
               <div className="card">
-                <div className="card-header fw-bold">Pending approval</div>
+                <div className="card-header fw-bold">Pending approval {userCanApprove ? '' : '(Admin approves)'}</div>
                 <div className="card-body p-0">
                   {gradesPendingLoading ? (
                     <div className="text-center py-4"><div className="spinner-border text-primary" /></div>
@@ -1021,8 +1055,14 @@ const AcademyManagement = () => {
                               <td><strong>{g.proposed_grade}</strong></td>
                               <td>{g.submitted_by_name || '—'}</td>
                               <td>
-                                <button type="button" className="btn btn-sm btn-success me-1" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Approve</button>
-                                <button type="button" className="btn btn-sm btn-danger" onClick={() => { setGradeActionId(g.id); setGradeActionMode('reject'); setGradeNotes(''); }}>Reject</button>
+                                {userCanApprove ? (
+                                  <>
+                                    <button type="button" className="btn btn-sm btn-success me-1" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Approve</button>
+                                    <button type="button" className="btn btn-sm btn-danger" onClick={() => { setGradeActionId(g.id); setGradeActionMode('reject'); setGradeNotes(''); }}>Reject</button>
+                                  </>
+                                ) : (
+                                  <span className="text-muted small">Awaiting admin</span>
+                                )}
                               </td>
                             </tr>
                           ))}
@@ -1059,6 +1099,14 @@ const AcademyManagement = () => {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'student-grades' && (
+        <StudentAcademyGradesTab
+          cohorts={cohorts}
+          courses={courses}
+          students={studentsForSelect}
+        />
       )}
 
       {showCohortForm && (

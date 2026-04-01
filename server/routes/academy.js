@@ -124,6 +124,45 @@ async function getCurrentStudent(req) {
   );
 }
 
+/** Official gradesheet payload for Prinstine Academy (PDF / print) */
+async function buildGradesheetPayload(studentDbId) {
+  const student = await db.get(
+    `SELECT s.*, u.name as display_name, u.email,
+            ch.name as cohort_name, ch.code as cohort_code
+     FROM students s
+     JOIN users u ON s.user_id = u.id
+     LEFT JOIN cohorts ch ON s.cohort_id = ch.id
+     WHERE s.id = ?`,
+    [studentDbId]
+  );
+  if (!student) return null;
+  const gradeRows = await db.all(
+    `SELECT g.proposed_grade as grade, g.approved_at,
+            c.course_code, c.title as course_title
+     FROM grade_submissions g
+     JOIN courses c ON g.course_id = c.id
+     WHERE g.student_id = ? AND g.status = 'Approved'
+     ORDER BY c.course_code ASC`,
+    [studentDbId]
+  );
+  return {
+    academyName: 'Prinstine Academy',
+    studentName: student.display_name || student.name || student.email,
+    studentCode: student.student_id,
+    cohortName: student.cohort_name || null,
+    cohortCode: student.cohort_code || null,
+    grades: gradeRows.map((r) => ({
+      grade: r.grade,
+      course_code: r.course_code,
+      course_title: r.course_title,
+      approved_at: r.approved_at
+    })),
+    issuedDate: new Date().toISOString(),
+    ceoName: 'Prince S. Cooper',
+    ceoTitle: 'Chief Executive Officer, Prinstine Academy'
+  };
+}
+
 // ----- Student self-service: /students/me (must be before /students/:id) -----
 
 // GET /api/academy/students/me — current student profile
@@ -269,9 +308,12 @@ router.get('/students/me/grades', authenticateToken, requireRole('Student'), asy
     if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
     const grades = await db.all(
       `SELECT g.id, g.course_id, g.proposed_grade as grade, g.approved_at,
-              c.course_code, c.title
+              c.course_code, c.title,
+              ch.name as cohort_name, ch.code as cohort_code
        FROM grade_submissions g
        JOIN courses c ON g.course_id = c.id
+       JOIN students s2 ON g.student_id = s2.id
+       LEFT JOIN cohorts ch ON s2.cohort_id = ch.id
        WHERE g.student_id = ? AND g.status = 'Approved'
        ORDER BY g.approved_at DESC`,
       [student.id]
@@ -280,6 +322,20 @@ router.get('/students/me/grades', authenticateToken, requireRole('Student'), asy
   } catch (e) {
     console.error('Get students/me/grades error:', e);
     res.status(500).json({ error: 'Failed to fetch grades' });
+  }
+});
+
+// GET /api/academy/students/me/gradesheet — JSON for PDF/print (current student)
+router.get('/students/me/gradesheet', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found' });
+    const payload = await buildGradesheetPayload(student.id);
+    if (!payload) return res.status(404).json({ error: 'Student record not found' });
+    res.json(payload);
+  } catch (e) {
+    console.error('Get students/me/gradesheet error:', e);
+    res.status(500).json({ error: 'Failed to build gradesheet' });
   }
 });
 
@@ -423,6 +479,25 @@ router.get('/students/:id', authenticateToken, async (req, res) => {
   } catch (error) {
     console.error('Get student error:', error);
     res.status(500).json({ error: 'Failed to fetch student' });
+  }
+});
+
+// GET /api/academy/students/:id/gradesheet — Admin & Academy staff (for print/download)
+router.get('/students/:id/gradesheet', authenticateToken, async (req, res) => {
+  try {
+    const academyStaff = await isAcademyStaff(req.user);
+    if (req.user.role !== 'Admin' && !academyStaff) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const sid = req.params.id;
+    const row = await db.get('SELECT id FROM students WHERE id = ? OR student_id = ?', [sid, sid]);
+    if (!row) return res.status(404).json({ error: 'Student not found' });
+    const payload = await buildGradesheetPayload(row.id);
+    if (!payload) return res.status(404).json({ error: 'Student not found' });
+    res.json(payload);
+  } catch (e) {
+    console.error('Get student gradesheet error:', e);
+    res.status(500).json({ error: 'Failed to build gradesheet' });
   }
 });
 
@@ -1581,9 +1656,13 @@ router.post('/grades/submit', authenticateToken, [
   }
 });
 
-// GET /api/academy/grades/pending (Admin)
-router.get('/grades/pending', authenticateToken, requireRole('Admin'), async (req, res) => {
+// GET /api/academy/grades/pending (Admin + Academy staff — view queue; approve/reject remains Admin-only)
+router.get('/grades/pending', authenticateToken, async (req, res) => {
   try {
+    const academyStaff = await isAcademyStaff(req.user);
+    if (req.user.role !== 'Admin' && !academyStaff) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
     const rows = await db.all(
       `SELECT g.id, g.student_id, g.course_id, g.proposed_grade, g.status, g.submitted_by, g.created_at,
               s.student_id as student_code, u.name as student_name, u.email as student_email,
@@ -1601,6 +1680,53 @@ router.get('/grades/pending', authenticateToken, requireRole('Admin'), async (re
   } catch (e) {
     console.error('Grades pending error:', e);
     res.status(500).json({ error: 'Failed to fetch pending grades' });
+  }
+});
+
+// GET /api/academy/grades/approved — all admin-approved grades (Admin + Academy staff)
+router.get('/grades/approved', authenticateToken, async (req, res) => {
+  try {
+    const academyStaff = await isAcademyStaff(req.user);
+    if (req.user.role !== 'Admin' && !academyStaff) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const { cohort_id, course_id, student_id, search } = req.query;
+    let query = `
+      SELECT g.id, g.student_id, g.course_id, g.proposed_grade as grade, g.approved_at,
+             s.student_id as student_code, u.name as student_name, u.email as student_email,
+             ch.id as cohort_id, ch.name as cohort_name, ch.code as cohort_code,
+             c.course_code, c.title as course_title
+      FROM grade_submissions g
+      JOIN students s ON g.student_id = s.id
+      JOIN users u ON s.user_id = u.id
+      LEFT JOIN cohorts ch ON s.cohort_id = ch.id
+      JOIN courses c ON g.course_id = c.id
+      WHERE g.status = 'Approved'
+    `;
+    const params = [];
+    if (cohort_id) {
+      query += ' AND s.cohort_id = ?';
+      params.push(cohort_id);
+    }
+    if (course_id) {
+      query += ' AND g.course_id = ?';
+      params.push(course_id);
+    }
+    if (student_id) {
+      query += ' AND g.student_id = ?';
+      params.push(student_id);
+    }
+    if (search && String(search).trim()) {
+      const term = `%${String(search).trim()}%`;
+      query += ' AND (u.name LIKE ? OR s.student_id LIKE ? OR u.email LIKE ?)';
+      params.push(term, term, term);
+    }
+    query += ' ORDER BY u.name ASC, c.course_code ASC';
+    const rows = await db.all(query, params);
+    res.json({ grades: rows });
+  } catch (e) {
+    console.error('Grades approved list error:', e);
+    res.status(500).json({ error: 'Failed to fetch approved grades' });
   }
 });
 

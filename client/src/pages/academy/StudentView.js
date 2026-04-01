@@ -2,13 +2,21 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../../config/api';
 import { normalizeUrl } from '../../utils/apiUrl';
+import { useAuth } from '../../hooks/useAuth';
+import { isAcademyStaff } from '../../utils/academyUtils';
+import { downloadGradesheetPdf, openGradesheetPrintWindow } from '../../utils/buildGradesheetPdf';
 
 const StudentView = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sheetLoading, setSheetLoading] = useState(false);
+
+  const canManageGradesheet =
+    user?.role === 'Admin' || isAcademyStaff(user);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +62,19 @@ const StudentView = () => {
     ? (student.profile_image.startsWith('http') ? student.profile_image : normalizeUrl(student.profile_image))
     : null;
 
+  const loadGradesheet = async () => {
+    setSheetLoading(true);
+    try {
+      const res = await api.get(`/academy/students/${student.id}/gradesheet`);
+      return res.data;
+    } catch (e) {
+      alert(e.response?.data?.error || 'Failed to load gradesheet');
+      return null;
+    } finally {
+      setSheetLoading(false);
+    }
+  };
+
   return (
     <div className="container-fluid">
       <button className="btn btn-outline-secondary mb-3" onClick={() => navigate('/academy')}>
@@ -90,6 +111,46 @@ const StudentView = () => {
           <p className="card-text"><strong>Email:</strong> {student.email}</p>
           <p className="card-text"><strong>Phone:</strong> {student.phone || 'N/A'}</p>
           <p className="card-text"><strong>Status:</strong> <span className={`badge bg-${student.status === 'Active' ? 'success' : 'secondary'} fs-6`}>{student.status || 'Active'}</span></p>
+          {canManageGradesheet && (
+            <div className="mt-3 pt-3 border-top">
+              <h6 className="mb-2">Official gradesheet</h6>
+              <div className="btn-group btn-group-sm flex-wrap">
+                <button
+                  type="button"
+                  className="btn btn-outline-primary"
+                  disabled={sheetLoading}
+                  onClick={async () => {
+                    const d = await loadGradesheet();
+                    if (d) openGradesheetPrintWindow(d, false);
+                  }}
+                >
+                  View
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-secondary"
+                  disabled={sheetLoading}
+                  onClick={async () => {
+                    const d = await loadGradesheet();
+                    if (d) openGradesheetPrintWindow(d, true);
+                  }}
+                >
+                  Print
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline-success"
+                  disabled={sheetLoading}
+                  onClick={async () => {
+                    const d = await loadGradesheet();
+                    if (d) downloadGradesheetPdf(d);
+                  }}
+                >
+                  Download PDF
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
