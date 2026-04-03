@@ -37,6 +37,10 @@ const AcademyManagement = () => {
   const [gradeActionId, setGradeActionId] = useState(null);
   const [gradeActionMode, setGradeActionMode] = useState(null);
   const [gradeNotes, setGradeNotes] = useState('');
+  const [pendingEditRow, setPendingEditRow] = useState(null);
+  const [pendingEditForm, setPendingEditForm] = useState({ proposed_grade: '', student_id: '', course_id: '' });
+  const [pendingEditCourses, setPendingEditCourses] = useState([]);
+  const [pendingEditSaving, setPendingEditSaving] = useState(false);
   
   // Filter states for students
   const [studentFilters, setStudentFilters] = useState({
@@ -1096,6 +1100,65 @@ const AcademyManagement = () => {
                   </div>
                 </div>
               )}
+              {pendingEditRow && userCanApprove && (
+                <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+                  <div className="modal-dialog modal-dialog-centered modal-lg">
+                    <div className="modal-content">
+                      <div className="modal-header">
+                        <h5 className="modal-title">Edit pending grade</h5>
+                        <button type="button" className="btn-close" onClick={() => setPendingEditRow(null)} aria-label="Close" />
+                      </div>
+                      <div className="modal-body">
+                        <div className="row">
+                          <div className="col-md-6 mb-3">
+                            <label className="form-label">Student</label>
+                            <select
+                              className="form-select"
+                              value={pendingEditForm.student_id}
+                              onChange={(e) => handlePendingEditStudentChange(e.target.value)}
+                            >
+                              <option value="">Select student</option>
+                              {studentsForSelect.filter((s) => s.approved === 1 || s.approved === true).map((s) => (
+                                <option key={s.id} value={s.id}>{s.name} ({s.student_id})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-md-6 mb-3">
+                            <label className="form-label">Course</label>
+                            <select
+                              className="form-select"
+                              value={pendingEditForm.course_id}
+                              onChange={(e) => setPendingEditForm((f) => ({ ...f, course_id: e.target.value }))}
+                              disabled={!pendingEditForm.student_id}
+                            >
+                              <option value="">Select course</option>
+                              {pendingEditCourses.map((c) => (
+                                <option key={c.course_id} value={c.course_id}>{c.course_code} — {c.title}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-12 mb-3">
+                            <label className="form-label">Grade</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              value={pendingEditForm.proposed_grade}
+                              onChange={(e) => setPendingEditForm((f) => ({ ...f, proposed_grade: e.target.value }))}
+                              placeholder="e.g. A, B+, 85"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="modal-footer">
+                        <button type="button" className="btn btn-secondary" onClick={() => setPendingEditRow(null)}>Cancel</button>
+                        <button type="button" className="btn btn-primary" disabled={pendingEditSaving} onClick={savePendingGradeEdit}>
+                          {pendingEditSaving ? 'Saving…' : 'Save'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1106,6 +1169,7 @@ const AcademyManagement = () => {
           cohorts={cohorts}
           courses={courses}
           students={studentsForSelect}
+          isAdmin={user?.role === 'Admin'}
         />
       )}
 

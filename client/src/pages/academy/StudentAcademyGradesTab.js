@@ -5,7 +5,7 @@ import { downloadGradesheetPdf, openGradesheetPrintWindow } from '../../utils/bu
 /**
  * Academy page tab: all admin-approved grades with cohort / course / student filters and search.
  */
-const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [] }) => {
+const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [], isAdmin = false }) => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -16,6 +16,10 @@ const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [] }) 
   const [sortKey, setSortKey] = useState('student_name');
   const [sortDir, setSortDir] = useState('asc');
   const [gradesheetLoading, setGradesheetLoading] = useState(null);
+  const [approvedEditRow, setApprovedEditRow] = useState(null);
+  const [approvedEditForm, setApprovedEditForm] = useState({ proposed_grade: '', student_id: '', course_id: '' });
+  const [approvedEditCourses, setApprovedEditCourses] = useState([]);
+  const [approvedEditSaving, setApprovedEditSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,6 +126,68 @@ const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [] }) 
   const onDownload = async (studentDbId) => {
     const data = await openGradesheet(studentDbId);
     if (data) downloadGradesheetPdf(data);
+  };
+
+  const openApprovedEdit = (g) => {
+    setApprovedEditRow(g);
+    setApprovedEditForm({
+      proposed_grade: g.grade || '',
+      student_id: String(g.student_id),
+      course_id: String(g.course_id)
+    });
+    api.get(`/academy/students/${g.student_id}/enrolled-courses`)
+      .then((r) => setApprovedEditCourses(r.data.courses || []))
+      .catch(() => setApprovedEditCourses([]));
+  };
+
+  const handleApprovedEditStudentChange = (sid) => {
+    setApprovedEditForm((f) => ({ ...f, student_id: sid, course_id: '' }));
+    if (!sid) {
+      setApprovedEditCourses([]);
+      return;
+    }
+    api.get(`/academy/students/${sid}/enrolled-courses`)
+      .then((r) => setApprovedEditCourses(r.data.courses || []))
+      .catch(() => setApprovedEditCourses([]));
+  };
+
+  const saveApprovedEdit = async () => {
+    if (!approvedEditRow) return;
+    const { proposed_grade, student_id, course_id } = approvedEditForm;
+    if (!proposed_grade?.trim() || !student_id || !course_id) {
+      alert('Grade, student, and course are required');
+      return;
+    }
+    setApprovedEditSaving(true);
+    try {
+      await api.put(`/academy/grades/${approvedEditRow.id}`, {
+        proposed_grade: proposed_grade.trim(),
+        student_id: parseInt(student_id, 10),
+        course_id: parseInt(course_id, 10)
+      });
+      setApprovedEditRow(null);
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.error || e.response?.data?.errors?.[0]?.msg || 'Failed to update');
+    } finally {
+      setApprovedEditSaving(false);
+    }
+  };
+
+  const deleteApprovedGrade = async (g) => {
+    if (
+      !window.confirm(
+        'Delete this approved grade? The student’s enrollment for this course will be set back to enrolled (grade cleared). This cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.delete(`/academy/grades/${g.id}`);
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.error || 'Failed to delete');
+    }
   };
 
   if (loading) {
@@ -273,12 +339,89 @@ const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [] }) 
                         </button>
                       </div>
                     </td>
+                    {isAdmin && (
+                      <td>
+                        <div className="btn-group btn-group-sm flex-wrap">
+                          <button type="button" className="btn btn-outline-primary" onClick={() => openApprovedEdit(g)}>
+                            Edit
+                          </button>
+                          <button type="button" className="btn btn-outline-danger" onClick={() => deleteApprovedGrade(g)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
             </tbody>
           </table>
         </div>
+        {approvedEditRow && isAdmin && (
+          <div className="modal d-block" style={{ background: 'rgba(0,0,0,0.5)' }} tabIndex={-1}>
+            <div className="modal-dialog modal-dialog-centered modal-lg">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Edit approved grade</h5>
+                  <button type="button" className="btn-close" onClick={() => setApprovedEditRow(null)} aria-label="Close" />
+                </div>
+                <div className="modal-body">
+                  <div className="row">
+                    <div className="col-md-6 mb-3">
+                      <label className="form-label">Student</label>
+                      <select
+                        className="form-select"
+                        value={approvedEditForm.student_id}
+                        onChange={(e) => handleApprovedEditStudentChange(e.target.value)}
+                      >
+                        <option value="">Select student</option>
+                        {students.filter((s) => s.approved === 1 || s.approved === true).map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name} ({s.student_id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-md-6 mb-3">
+                      <label className="form-label">Course</label>
+                      <select
+                        className="form-select"
+                        value={approvedEditForm.course_id}
+                        onChange={(e) => setApprovedEditForm((f) => ({ ...f, course_id: e.target.value }))}
+                        disabled={!approvedEditForm.student_id}
+                      >
+                        <option value="">Select course</option>
+                        {approvedEditCourses.map((c) => (
+                          <option key={c.course_id} value={c.course_id}>
+                            {c.course_code} — {c.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-12 mb-3">
+                      <label className="form-label">Grade</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={approvedEditForm.proposed_grade}
+                        onChange={(e) => setApprovedEditForm((f) => ({ ...f, proposed_grade: e.target.value }))}
+                        placeholder="e.g. A, B+, 85"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setApprovedEditRow(null)}>
+                    Cancel
+                  </button>
+                  <button type="button" className="btn btn-primary" disabled={approvedEditSaving} onClick={saveApprovedEdit}>
+                    {approvedEditSaving ? 'Saving…' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

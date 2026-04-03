@@ -1610,6 +1610,33 @@ router.get('/certificates/verify/:code', async (req, res) => {
 
 // ========== GRADES (submit + admin approval) ==========
 
+/** Keep enrollments in sync when an approved grade value or student/course changes */
+async function applyEnrollmentGradeFromSubmission(studentId, courseId, gradeVal) {
+  const enrollExists = await db.get(
+    'SELECT 1 FROM enrollments WHERE student_id = ? AND course_id = ?',
+    [studentId, courseId]
+  );
+  if (!enrollExists) {
+    await db.run(
+      `INSERT INTO enrollments (student_id, course_id, enrollment_date, status, grade, completion_date) VALUES (?, ?, CURRENT_DATE, 'Completed', ?, CURRENT_DATE)`,
+      [studentId, courseId, gradeVal]
+    );
+  } else {
+    await db.run(
+      `UPDATE enrollments SET grade = ?, status = 'Completed', completion_date = CURRENT_DATE WHERE student_id = ? AND course_id = ?`,
+      [gradeVal, studentId, courseId]
+    );
+  }
+}
+
+/** Revert enrollment when an approved grade submission is deleted or moved away from this pair */
+async function clearEnrollmentAfterApprovedGradeRemoved(studentId, courseId) {
+  await db.run(
+    `UPDATE enrollments SET grade = NULL, status = 'Enrolled', completion_date = NULL WHERE student_id = ? AND course_id = ?`,
+    [studentId, courseId]
+  );
+}
+
 // POST /api/academy/grades/submit (Instructor + Academy staff)
 router.post('/grades/submit', authenticateToken, [
   body('student_id').isInt().withMessage('student_id is required'),
@@ -1750,18 +1777,7 @@ router.put('/grades/:id/approve', authenticateToken, requireRole('Admin'), [
     );
 
     const gradeVal = g.proposed_grade;
-    const enrollExists = await db.get('SELECT 1 FROM enrollments WHERE student_id = ? AND course_id = ?', [g.student_id, g.course_id]);
-    if (!enrollExists) {
-      await db.run(
-        `INSERT INTO enrollments (student_id, course_id, enrollment_date, status, grade, completion_date) VALUES (?, ?, CURRENT_DATE, 'Completed', ?, CURRENT_DATE)`,
-        [g.student_id, g.course_id, gradeVal]
-      );
-    } else {
-      await db.run(
-        `UPDATE enrollments SET grade = ?, status = 'Completed', completion_date = CURRENT_DATE WHERE student_id = ? AND course_id = ?`,
-        [gradeVal, g.student_id, g.course_id]
-      );
-    }
+    await applyEnrollmentGradeFromSubmission(g.student_id, g.course_id, gradeVal);
 
     const student = await db.get('SELECT user_id FROM students WHERE id = ?', [g.student_id]);
     if (student) {
@@ -1833,6 +1849,111 @@ router.put('/grades/:id/reject', authenticateToken, requireRole('Admin'), [
   } catch (e) {
     console.error('Grade reject error:', e);
     res.status(500).json({ error: 'Failed to reject grade' });
+  }
+});
+
+// PUT /api/academy/grades/:id (Admin — edit pending or approved submission)
+router.put('/grades/:id', authenticateToken, requireRole('Admin'), [
+  body('proposed_grade').trim().notEmpty().withMessage('proposed_grade is required'),
+  body('student_id').optional().isInt(),
+  body('course_id').optional().isInt()
+], async (req, res) => {
+  try {
+    const errs = validationResult(req);
+    if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+
+    const g = await db.get(
+      'SELECT id, student_id, course_id, proposed_grade, status FROM grade_submissions WHERE id = ?',
+      [id]
+    );
+    if (!g) return res.status(404).json({ error: 'Grade submission not found' });
+    if (g.status === 'Rejected') {
+      return res.status(400).json({ error: 'Cannot edit a rejected submission' });
+    }
+
+    const proposed_grade = String(req.body.proposed_grade).trim();
+    const student_id = req.body.student_id !== undefined ? parseInt(req.body.student_id, 10) : g.student_id;
+    const course_id = req.body.course_id !== undefined ? parseInt(req.body.course_id, 10) : g.course_id;
+
+    if (Number.isNaN(student_id) || Number.isNaN(course_id)) {
+      return res.status(400).json({ error: 'Invalid student_id or course_id' });
+    }
+
+    const enroll = await db.get(
+      'SELECT id FROM student_course_enrollments WHERE student_id = ? AND course_id = ? AND status != ?',
+      [student_id, course_id, 'Dropped']
+    );
+    if (!enroll) {
+      return res.status(400).json({ error: 'Student is not enrolled in this course' });
+    }
+
+    const conflict = await db.get(
+      `SELECT id FROM grade_submissions WHERE student_id = ? AND course_id = ? AND id != ? AND status != 'Rejected'`,
+      [student_id, course_id, id]
+    );
+    if (conflict) {
+      return res.status(400).json({ error: 'Another grade submission already exists for this student and course' });
+    }
+
+    const oldStudent = g.student_id;
+    const oldCourse = g.course_id;
+    const wasApproved = g.status === 'Approved';
+
+    if (wasApproved && (oldStudent !== student_id || oldCourse !== course_id)) {
+      await clearEnrollmentAfterApprovedGradeRemoved(oldStudent, oldCourse);
+    }
+
+    await db.run(
+      `UPDATE grade_submissions SET student_id = ?, course_id = ?, proposed_grade = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+      [student_id, course_id, proposed_grade, id]
+    );
+
+    if (g.status === 'Approved') {
+      await applyEnrollmentGradeFromSubmission(student_id, course_id, proposed_grade);
+    }
+
+    await logAction(
+      req.user.id,
+      'update_grade_submission',
+      'academy',
+      id,
+      { proposed_grade, student_id, course_id, previous: { student_id: oldStudent, course_id: oldCourse } },
+      req
+    );
+    res.json({
+      message: 'Grade submission updated',
+      submission: { id, status: g.status, proposed_grade, student_id, course_id }
+    });
+  } catch (e) {
+    console.error('Grade update error:', e);
+    res.status(500).json({ error: 'Failed to update grade submission' });
+  }
+});
+
+// DELETE /api/academy/grades/:id (Admin — delete pending or approved submission)
+router.delete('/grades/:id', authenticateToken, requireRole('Admin'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (Number.isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+
+    const g = await db.get(
+      'SELECT id, student_id, course_id, status FROM grade_submissions WHERE id = ?',
+      [id]
+    );
+    if (!g) return res.status(404).json({ error: 'Grade submission not found' });
+
+    if (g.status === 'Approved') {
+      await clearEnrollmentAfterApprovedGradeRemoved(g.student_id, g.course_id);
+    }
+
+    await db.run('DELETE FROM grade_submissions WHERE id = ?', [id]);
+    await logAction(req.user.id, 'delete_grade_submission', 'academy', id, { status: g.status }, req);
+    res.json({ message: 'Grade submission deleted' });
+  } catch (e) {
+    console.error('Grade delete error:', e);
+    res.status(500).json({ error: 'Failed to delete grade submission' });
   }
 });
 
