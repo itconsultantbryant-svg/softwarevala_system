@@ -320,6 +320,62 @@ const AcademyManagement = () => {
     }
   };
 
+  const openPendingGradeEdit = (g) => {
+    setPendingEditRow(g);
+    setPendingEditForm({
+      proposed_grade: g.proposed_grade || '',
+      student_id: String(g.student_id),
+      course_id: String(g.course_id)
+    });
+    api.get(`/academy/students/${g.student_id}/enrolled-courses`)
+      .then((r) => setPendingEditCourses(r.data.courses || []))
+      .catch(() => setPendingEditCourses([]));
+  };
+
+  const handlePendingEditStudentChange = (sid) => {
+    setPendingEditForm((f) => ({ ...f, student_id: sid, course_id: '' }));
+    if (!sid) {
+      setPendingEditCourses([]);
+      return;
+    }
+    api.get(`/academy/students/${sid}/enrolled-courses`)
+      .then((r) => setPendingEditCourses(r.data.courses || []))
+      .catch(() => setPendingEditCourses([]));
+  };
+
+  const savePendingGradeEdit = async () => {
+    if (!pendingEditRow) return;
+    const { proposed_grade, student_id, course_id } = pendingEditForm;
+    if (!proposed_grade?.trim() || !student_id || !course_id) {
+      alert('Grade, student, and course are required');
+      return;
+    }
+    setPendingEditSaving(true);
+    try {
+      await api.put(`/academy/grades/${pendingEditRow.id}`, {
+        proposed_grade: proposed_grade.trim(),
+        student_id: parseInt(student_id, 10),
+        course_id: parseInt(course_id, 10)
+      });
+      setPendingEditRow(null);
+      fetchGradesPending();
+    } catch (err) {
+      alert(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Failed to update');
+    } finally {
+      setPendingEditSaving(false);
+    }
+  };
+
+  const deletePendingGrade = async (g) => {
+    if (!window.confirm('Delete this pending grade submission? This cannot be undone.')) return;
+    try {
+      await api.delete(`/academy/grades/${g.id}`);
+      fetchGradesPending();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to delete');
+    }
+  };
+
   const handleEditInstructor = async (instructor) => {
     try {
       const response = await api.get(`/academy/instructors/${instructor.id}`);
@@ -1060,10 +1116,12 @@ const AcademyManagement = () => {
                               <td>{g.submitted_by_name || '—'}</td>
                               <td>
                                 {userCanApprove ? (
-                                  <>
-                                    <button type="button" className="btn btn-sm btn-success me-1" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Approve</button>
+                                  <div className="d-flex flex-wrap gap-1">
+                                    <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => openPendingGradeEdit(g)}>Edit</button>
+                                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => deletePendingGrade(g)}>Delete</button>
+                                    <button type="button" className="btn btn-sm btn-success" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Approve</button>
                                     <button type="button" className="btn btn-sm btn-danger" onClick={() => { setGradeActionId(g.id); setGradeActionMode('reject'); setGradeNotes(''); }}>Reject</button>
-                                  </>
+                                  </div>
                                 ) : (
                                   <span className="text-muted small">Awaiting admin</span>
                                 )}
