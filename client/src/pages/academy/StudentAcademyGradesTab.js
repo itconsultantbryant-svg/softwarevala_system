@@ -5,14 +5,12 @@ import { exportApprovedGradesExcel, exportApprovedGradesPdf } from '../../utils/
 
 /**
  * Academy page tab: all admin-approved grades with cohort / course / student filters and search.
- * @param {boolean} canExportReports — Admin + Academy staff: Excel / PDF export of visible (filtered) rows
  */
 const StudentAcademyGradesTab = ({
   cohorts = [],
   courses = [],
   students = [],
-  isAdmin = false,
-  canExportReports = false
+  isAdmin = false
 }) => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -232,10 +230,30 @@ const StudentAcademyGradesTab = ({
     );
   }
 
+  // Same as API access for GET /grades/approved — show exports whenever data loaded successfully
+  const showExportToolbar = !error;
+
   return (
     <div className="card">
       <div className="card-body">
-        <h5 className="card-title mb-3">Student grades (admin-approved)</h5>
+        <div className="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
+          <h5 className="card-title mb-0">Student grades (admin-approved)</h5>
+          {showExportToolbar && (
+            <div className="d-flex flex-wrap align-items-center gap-2">
+              <span className="text-muted small">Export (filtered):</span>
+              <div className="btn-group" role="group" aria-label="Export grades to Excel or PDF">
+                <button type="button" className="btn btn-sm btn-success" onClick={handleExportExcel}>
+                  <i className="bi bi-file-earmark-spreadsheet me-1" aria-hidden />
+                  Excel
+                </button>
+                <button type="button" className="btn btn-sm btn-danger" onClick={handleExportPdf}>
+                  <i className="bi bi-file-earmark-pdf me-1" aria-hidden />
+                  PDF
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         {error && <div className="alert alert-danger">{error}</div>}
 
         <div className="row g-2 mb-3">
