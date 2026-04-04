@@ -1,11 +1,19 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import api from '../../config/api';
 import { downloadGradesheetPdf, openGradesheetPrintWindow } from '../../utils/buildGradesheetPdf';
+import { exportApprovedGradesExcel, exportApprovedGradesPdf } from '../../utils/academyGradesExport';
 
 /**
  * Academy page tab: all admin-approved grades with cohort / course / student filters and search.
+ * @param {boolean} canExportReports — Admin + Academy staff: Excel / PDF export of visible (filtered) rows
  */
-const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [], isAdmin = false }) => {
+const StudentAcademyGradesTab = ({
+  cohorts = [],
+  courses = [],
+  students = [],
+  isAdmin = false,
+  canExportReports = false
+}) => {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -174,6 +182,32 @@ const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [], is
     }
   };
 
+  const handleExportExcel = () => {
+    if (filtered.length === 0) {
+      alert('No rows to export. Adjust filters or ensure there are approved grades.');
+      return;
+    }
+    try {
+      exportApprovedGradesExcel(filtered);
+    } catch (e) {
+      console.error(e);
+      alert('Export to Excel failed.');
+    }
+  };
+
+  const handleExportPdf = () => {
+    if (filtered.length === 0) {
+      alert('No rows to export. Adjust filters or ensure there are approved grades.');
+      return;
+    }
+    try {
+      exportApprovedGradesPdf(filtered);
+    } catch (e) {
+      console.error(e);
+      alert('Export to PDF failed.');
+    }
+  };
+
   const deleteApprovedGrade = async (g) => {
     if (
       !window.confirm(
@@ -286,12 +320,13 @@ const StudentAcademyGradesTab = ({ cohorts = [], courses = [], students = [], is
                   Approved {sortKey === 'approved_at' ? (sortDir === 'asc' ? '↑' : '↓') : ''}
                 </th>
                 <th>Gradesheet</th>
+                {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-muted text-center py-4">
+                  <td colSpan={isAdmin ? 7 : 6} className="text-muted text-center py-4">
                     No approved grades match the current filters.
                   </td>
                 </tr>

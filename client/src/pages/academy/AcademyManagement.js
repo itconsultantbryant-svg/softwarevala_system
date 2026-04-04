@@ -1228,6 +1228,7 @@ const AcademyManagement = () => {
           courses={courses}
           students={studentsForSelect}
           isAdmin={user?.role === 'Admin'}
+          canExportReports={user?.role === 'Admin' || userIsAcademyStaff}
         />
       )}
 
