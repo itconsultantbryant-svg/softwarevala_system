@@ -1,16 +1,23 @@
 import { io } from 'socket.io-client';
-import { getBaseUrl } from '../utils/apiUrl';
+import { getSocketBaseUrl } from '../utils/apiUrl';
 
 let socket = null;
 
 export const initSocket = (userId) => {
   if (!socket) {
-    const socketUrl = getBaseUrl() || 'http://localhost:3006';
+    const socketUrl = getSocketBaseUrl() || 'http://localhost:3006';
     socket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
+      // Polling first: many mobile carriers (e.g. Orange Liberia) block or break WebSocket
+      // upgrades; long-polling over HTTPS works reliably, then upgrade when possible.
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      rememberUpgrade: false,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 5
+      reconnectionDelayMax: 15000,
+      reconnectionAttempts: 25,
+      timeout: 45000,
+      withCredentials: true
     });
 
     socket.on('connect', () => {

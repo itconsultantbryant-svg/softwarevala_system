@@ -6,7 +6,8 @@ const API_BASE_URL = getApiBaseUrl();
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 60000, // 60 second timeout (increased for slow database operations)
+  // 90s: slow mobile backhaul (e.g. congested carrier networks in Liberia)
+  timeout: 90000,
   headers: {
     'Content-Type': 'application/json'
   }

@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect } from 'react';
 import api from '../config/api';
 import { initSocket, disconnectSocket } from '../config/socket';
-import { normalizeUrl } from '../utils/apiUrl';
+import { normalizeUrl, getBaseUrl } from '../utils/apiUrl';
 
 export const AuthContext = createContext();
 
@@ -243,8 +243,7 @@ export const AuthProvider = ({ children }) => {
               if (url.startsWith('http://') || url.startsWith('https://')) {
                 return url;
               }
-              const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3006/api';
-              const baseUrl = API_BASE_URL.replace('/api', '');
+              const baseUrl = getBaseUrl() || 'http://localhost:3006';
               const relativeUrl = url.startsWith('/') ? url : `/${url}`;
               return `${baseUrl}${relativeUrl}`;
             };

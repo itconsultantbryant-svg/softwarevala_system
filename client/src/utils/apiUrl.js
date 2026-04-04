@@ -1,24 +1,47 @@
 /**
- * Centralized API URL utility for production-ready URL handling
- * Ensures all URLs use environment variables in production
+ * Centralized API URL utility for production-ready URL handling.
+ *
+ * Render: set REACT_APP_API_URL to your backend HTTPS URL (with or without /api).
+ * Socket.IO uses the same host (see getSocketBaseUrl); client prefers HTTP long-polling
+ * before WebSocket so restrictive carriers (e.g. some Orange Liberia paths) still connect.
+ * If DNS issues persist on one ISP, use a custom domain (Cloudflare) in front of Render.
  */
+
+function trimTrailingSlashes(s) {
+  return (s || '').replace(/\/+$/, '');
+}
 
 /**
  * Get the API base URL from environment variable
- * In production, REACT_APP_API_URL must be set
+ * In production, REACT_APP_API_URL must be set (Render: full https URL to backend, with or without /api)
  * @returns {string} API base URL
  */
 export const getApiBaseUrl = () => {
-  const apiUrl = process.env.REACT_APP_API_URL;
-  
-  if (!apiUrl && process.env.NODE_ENV === 'production') {
+  const raw = (process.env.REACT_APP_API_URL || '').trim();
+
+  if (!raw && process.env.NODE_ENV === 'production') {
     console.error('REACT_APP_API_URL is not set in production! Please configure it.');
-    // Return empty string to force errors rather than using localhost in production
     return '';
   }
-  
-  // In development, fallback to localhost if not set
-  return apiUrl || 'http://localhost:3006/api';
+
+  if (!raw) {
+    return 'http://localhost:3006/api';
+  }
+
+  let base = trimTrailingSlashes(raw);
+  if (!/\/api$/i.test(base)) {
+    base = `${base}/api`;
+  }
+  return base;
+};
+
+/**
+ * Socket.IO connects to the API host (no /api path). Override with REACT_APP_SOCKET_URL if needed.
+ */
+export const getSocketBaseUrl = () => {
+  const socketUrl = (process.env.REACT_APP_SOCKET_URL || '').trim();
+  if (socketUrl) return trimTrailingSlashes(socketUrl);
+  return getBaseUrl();
 };
 
 /**

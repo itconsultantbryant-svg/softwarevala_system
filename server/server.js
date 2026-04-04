@@ -14,6 +14,9 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
+// Render (and most hosts) sit behind a reverse proxy — required for correct HTTPS / client IP
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 const allowedSocketOrigins = [
   process.env.FRONTEND_URL,
@@ -25,6 +28,12 @@ const allowedSocketOrigins = [
 ].filter(Boolean);
 
 const io = socketIo(server, {
+  // High-latency / restrictive mobile networks (Orange, MTN, etc.)
+  pingTimeout: 120000,
+  pingInterval: 25000,
+  upgradeTimeout: 60000,
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
   cors: {
     origin: function (origin, callback) {
       // Allow production domain and other allowed origins
@@ -55,33 +64,24 @@ const PORT = process.env.PORT || 3006;
 //   crossOriginResourcePolicy: { policy: "cross-origin" }
 // }));
 
-// CORS configuration - Simple and permissive for now
+// CORS — work across ISPs and mobile carriers (Orange, MTN, etc.)
+// Never use Access-Control-Allow-Origin: * together with Allow-Credentials: true (browser rejects it).
+// Echo the request Origin when present so any legitimate frontend URL (Render preview, custom domain) works.
 app.use((req, res, next) => {
   const origin = req.headers.origin;
-  // Allow all origins including production domain
-  const allowedOrigins = [
-    'https://prinstinemanagementsystem.org',
-    'https://www.prinstinemanagementsystem.org',
-    'https://prinstine-group-system-frontend.onrender.com',
-    process.env.FRONTEND_URL,
-    'http://localhost:3000',
-    'http://localhost:3001'
-  ].filter(Boolean);
-  
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
-  } else if (!origin || allowedOrigins.some(allowed => origin.includes(allowed.replace(/^https?:\/\//, '')))) {
-    res.header('Access-Control-Allow-Origin', origin || '*');
+    res.header('Vary', 'Origin');
+    res.header('Access-Control-Allow-Credentials', 'true');
   } else {
     res.header('Access-Control-Allow-Origin', '*');
+    // Do not send Allow-Credentials with * — browsers reject that combination
   }
-  
+
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Referer, Accept');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // 24 hours
-  
-  // Handle preflight requests
+  res.header('Access-Control-Max-Age', '86400');
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
