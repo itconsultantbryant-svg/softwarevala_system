@@ -391,7 +391,7 @@ router.get('/students/me/certificates/:id/download', authenticateToken, requireR
 // Get all students
 router.get('/students', authenticateToken, async (req, res) => {
   try {
-    const { status, search, pending_approval, cohort_id, period, start_date, end_date } = req.query;
+    const { status, search, pending_approval, cohort_id, period, start_date, end_date, course_id } = req.query;
     let query = `
       SELECT s.*, u.name, u.email, u.phone, u.profile_image, c.name as cohort_name, c.code as cohort_code
       FROM students s
@@ -444,7 +444,18 @@ router.get('/students', authenticateToken, async (req, res) => {
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
-    query += ' ORDER BY s.created_at DESC';
+    if (course_id) {
+      const cid = parseInt(course_id, 10);
+      if (!isNaN(cid)) {
+        query += ` AND EXISTS (
+          SELECT 1 FROM student_course_enrollments sce
+          WHERE sce.student_id = s.id AND sce.course_id = ?
+        )`;
+        params.push(cid);
+      }
+    }
+
+    query += ' ORDER BY LOWER(TRIM(u.name)) ASC, s.student_id ASC';
 
     const students = await db.all(query, params);
     res.json({ students });

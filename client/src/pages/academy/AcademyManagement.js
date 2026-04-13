@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { isAcademyStaff, canApproveAcademy } from '../../utils/academyUtils';
 import { getSocket } from '../../config/socket';
+import {
+  exportCoursesExcel,
+  exportCoursesPdf,
+  exportStudentsExcel,
+  exportStudentsPdf,
+  exportInstructorsExcel,
+  exportInstructorsPdf
+} from '../../utils/academyListExports';
 import StudentForm from './StudentForm';
 import CourseForm from './CourseForm';
 import InstructorForm from './InstructorForm';
@@ -45,12 +53,15 @@ const AcademyManagement = () => {
   // Filter states for students
   const [studentFilters, setStudentFilters] = useState({
     cohort_id: '',
+    course_id: '',
     period: '',
     start_date: '',
     end_date: '',
     status: '',
     search: ''
   });
+  /** Client-side sort for student table (API returns alphabetical by name by default) */
+  const [studentSort, setStudentSort] = useState('name_asc');
   
   // Check if user is Academy staff (can add/edit/view)
   const userIsAcademyStaff = isAcademyStaff(user);
@@ -59,6 +70,117 @@ const AcademyManagement = () => {
   const canAccessAcademyMgmt =
     user && (user.role === 'Admin' || userIsAcademyStaff || user.role === 'Instructor');
   const canSeeGradeQueue = user && (user.role === 'Admin' || userIsAcademyStaff);
+  const canExportLists = user && (user.role === 'Admin' || userIsAcademyStaff);
+
+  const displayStudents = useMemo(() => {
+    const list = [...(students || [])];
+    const cmpName = (a, b) =>
+      String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+    const cmpId = (a, b) =>
+      String(a.student_id || '').localeCompare(String(b.student_id || ''), undefined, { numeric: true });
+    const cmpCohort = (a, b) =>
+      String(a.cohort_name || '').localeCompare(String(b.cohort_name || ''), undefined, { sensitivity: 'base' });
+    switch (studentSort) {
+      case 'name_desc':
+        list.sort((a, b) => -cmpName(a, b));
+        break;
+      case 'id':
+        list.sort(cmpId);
+        break;
+      case 'cohort':
+        list.sort((a, b) => cmpCohort(a, b) || cmpName(a, b));
+        break;
+      default:
+        list.sort(cmpName);
+    }
+    return list;
+  }, [students, studentSort]);
+
+  const fetchCourses = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/academy/courses');
+      setCourses(response.data.courses || []);
+    } catch (error) {
+      console.error('Error fetching courses:', error);
+      setCourses([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchStudents = useCallback(async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams();
+      if (studentFilters.cohort_id) params.append('cohort_id', studentFilters.cohort_id);
+      if (studentFilters.course_id) params.append('course_id', studentFilters.course_id);
+      if (studentFilters.period) params.append('period', studentFilters.period);
+      if (studentFilters.start_date) params.append('start_date', studentFilters.start_date);
+      if (studentFilters.end_date) params.append('end_date', studentFilters.end_date);
+      if (studentFilters.status) params.append('status', studentFilters.status);
+      if (studentFilters.search) params.append('search', studentFilters.search);
+
+      const response = await api.get(`/academy/students?${params.toString()}`);
+      setStudents(response.data.students);
+    } catch (error) {
+      console.error('Error fetching students:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [studentFilters]);
+
+  const fetchStudentsRef = useRef(fetchStudents);
+  fetchStudentsRef.current = fetchStudents;
+
+  const fetchStudentsUnfiltered = useCallback(async () => {
+    try {
+      const response = await api.get('/academy/students');
+      setStudentsForSelect(response.data.students || []);
+    } catch (error) {
+      console.error('Error fetching students for selects:', error);
+      setStudentsForSelect([]);
+    }
+  }, []);
+
+  const fetchCohorts = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/academy/cohorts');
+      setCohorts(response.data.cohorts || []);
+    } catch (error) {
+      console.error('Error fetching cohorts:', error);
+      setCohorts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchInstructors = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/academy/instructors');
+      setInstructors(response.data.instructors || []);
+    } catch (error) {
+      console.error('Error fetching instructors:', error);
+      setInstructors([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchGradesPending = useCallback(async () => {
+    setGradesPendingLoading(true);
+    try {
+      const res = await api.get('/academy/grades/pending');
+      setGradesPending(res.data.pending || []);
+    } catch (e) {
+      console.error('Fetch pending grades error:', e);
+      setGradesPending([]);
+    } finally {
+      setGradesPendingLoading(false);
+    }
+  }, []);
 
   // Load tab data when user becomes available or tab changes (fixes Admin not loading lists on first paint)
   useEffect(() => {
@@ -66,12 +188,12 @@ const AcademyManagement = () => {
     if (activeTab === 'courses') fetchCourses();
     else if (activeTab === 'students') {
       fetchCohorts();
-      fetchStudents();
+      fetchCourses();
     } else if (activeTab === 'instructors') fetchInstructors();
     else if (activeTab === 'cohorts') fetchCohorts();
     else if (activeTab === 'grades') {
       fetchCourses();
-      fetchStudents();
+      fetchStudentsRef.current();
       fetchCohorts();
       fetchStudentsUnfiltered();
       if (canSeeGradeQueue) fetchGradesPending();
@@ -88,98 +210,19 @@ const AcademyManagement = () => {
     user?.position,
     user?.email,
     canAccessAcademyMgmt,
-    canSeeGradeQueue
+    canSeeGradeQueue,
+    fetchCourses,
+    fetchCohorts,
+    fetchInstructors,
+    fetchStudentsUnfiltered,
+    fetchGradesPending
   ]);
-  
-  // Fetch students when filters change
+
+  // Students tab: load / refetch when tab is active and filters change (fetchStudents identity tracks studentFilters)
   useEffect(() => {
-    if (activeTab === 'students') {
-      fetchStudents();
-    }
-  }, [studentFilters]);
-
-  const fetchCourses = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/academy/courses');
-      setCourses(response.data.courses || []);
-    } catch (error) {
-      console.error('Error fetching courses:', error);
-      setCourses([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      const params = new URLSearchParams();
-      if (studentFilters.cohort_id) params.append('cohort_id', studentFilters.cohort_id);
-      if (studentFilters.period) params.append('period', studentFilters.period);
-      if (studentFilters.start_date) params.append('start_date', studentFilters.start_date);
-      if (studentFilters.end_date) params.append('end_date', studentFilters.end_date);
-      if (studentFilters.status) params.append('status', studentFilters.status);
-      if (studentFilters.search) params.append('search', studentFilters.search);
-      
-      const response = await api.get(`/academy/students?${params.toString()}`);
-      setStudents(response.data.students);
-    } catch (error) {
-      console.error('Error fetching students:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStudentsUnfiltered = async () => {
-    try {
-      const response = await api.get('/academy/students');
-      setStudentsForSelect(response.data.students || []);
-    } catch (error) {
-      console.error('Error fetching students for selects:', error);
-      setStudentsForSelect([]);
-    }
-  };
-  
-  const fetchCohorts = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/academy/cohorts');
-      setCohorts(response.data.cohorts || []);
-    } catch (error) {
-      console.error('Error fetching cohorts:', error);
-      setCohorts([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchInstructors = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/academy/instructors');
-      console.log('Instructors fetched:', response.data);
-      setInstructors(response.data.instructors || []);
-    } catch (error) {
-      console.error('Error fetching instructors:', error);
-      setInstructors([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchGradesPending = async () => {
-    setGradesPendingLoading(true);
-    try {
-      const res = await api.get('/academy/grades/pending');
-      setGradesPending(res.data.pending || []);
-    } catch (e) {
-      console.error('Fetch pending grades error:', e);
-      setGradesPending([]);
-    } finally {
-      setGradesPendingLoading(false);
-    }
-  };
+    if (activeTab !== 'students') return;
+    fetchStudents();
+  }, [activeTab, fetchStudents]);
 
   const fetchGradeEnrolledCourses = async (studentId) => {
     if (!studentId) { setGradeEnrolledCourses([]); return; }
@@ -202,7 +245,7 @@ const AcademyManagement = () => {
     };
     socket.on('notification', onNotification);
     return () => socket.off('notification', onNotification);
-  }, [activeTab, canSeeGradeQueue]);
+  }, [activeTab, canSeeGradeQueue, fetchGradesPending]);
 
   const handleAddStudent = () => {
     setEditingStudent(null);
@@ -266,12 +309,14 @@ const AcademyManagement = () => {
   const clearFilters = () => {
     setStudentFilters({
       cohort_id: '',
+      course_id: '',
       period: '',
       start_date: '',
       end_date: '',
       status: '',
       search: ''
     });
+    setStudentSort('name_asc');
   };
 
   const handleGradeStudentChange = (studentId) => {
@@ -576,6 +621,20 @@ const AcademyManagement = () => {
                 {(user?.role === 'Admin' || userIsAcademyStaff) ? 'No courses found. Click "Add Course" to create one.' : 'No courses found.'}
               </div>
             ) : (
+              <>
+              {canExportLists && (
+                <div className="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
+                  <span className="text-muted small me-auto">Export courses list:</span>
+                  <button type="button" className="btn btn-sm btn-success" onClick={() => exportCoursesExcel(courses)}>
+                    <i className="bi bi-file-earmark-spreadsheet me-1" aria-hidden />
+                    Excel
+                  </button>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => exportCoursesPdf(courses)}>
+                    <i className="bi bi-file-earmark-pdf me-1" aria-hidden />
+                    PDF
+                  </button>
+                </div>
+              )}
               <div className="table-responsive">
                 <table className="table table-hover">
                   <thead>
@@ -655,6 +714,7 @@ const AcademyManagement = () => {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
@@ -671,19 +731,34 @@ const AcademyManagement = () => {
               </div>
             ) : (
               <>
-            {/* Filters */}
-            <div className="row mb-3">
-              <div className="col-md-2">
-                <label className="form-label">Cohort</label>
+            {/* Filters — cohort, course, dates, status, search; sort & export */}
+            <div className="row g-2 mb-2">
+              <div className="col-6 col-md-2">
+                <label className="form-label small mb-0">Cohort</label>
                 <select
                   className="form-select form-select-sm"
                   value={studentFilters.cohort_id}
                   onChange={(e) => handleFilterChange('cohort_id', e.target.value)}
                 >
-                  <option value="">All Cohorts</option>
+                  <option value="">All cohorts</option>
                   {cohorts.filter(c => c.status === 'Active').map((cohort) => (
                     <option key={cohort.id} value={cohort.id}>
                       {cohort.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-6 col-md-2">
+                <label className="form-label small mb-0">Course</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={studentFilters.course_id}
+                  onChange={(e) => handleFilterChange('course_id', e.target.value)}
+                >
+                  <option value="">All courses</option>
+                  {courses.map((co) => (
+                    <option key={co.id} value={co.id}>
+                      {co.course_code} — {co.title}
                     </option>
                   ))}
                 </select>
@@ -731,28 +806,72 @@ const AcademyManagement = () => {
                 </select>
               </div>
               <div className="col-md-2">
-                <label className="form-label">Search</label>
+                <label className="form-label small mb-0">Search</label>
                 <input
-                  type="text"
+                  type="search"
                   className="form-control form-control-sm"
-                  placeholder="Name, email, ID"
+                  placeholder="Name, email, or student ID"
                   value={studentFilters.search}
                   onChange={(e) => handleFilterChange('search', e.target.value)}
+                  autoComplete="off"
                 />
               </div>
             </div>
-            <div className="mb-3">
-              <button className="btn btn-sm btn-outline-secondary" onClick={clearFilters}>
-                <i className="bi bi-x-circle me-1"></i>Clear Filters
+            <div className="row g-2 align-items-end mb-2">
+              <div className="col-12 col-md-4 col-lg-3">
+                <label className="form-label small mb-0">Sort</label>
+                <select
+                  className="form-select form-select-sm"
+                  value={studentSort}
+                  onChange={(e) => setStudentSort(e.target.value)}
+                >
+                  <option value="name_asc">Name (A–Z)</option>
+                  <option value="name_desc">Name (Z–A)</option>
+                  <option value="id">Student ID</option>
+                  <option value="cohort">Cohort (A–Z)</option>
+                </select>
+              </div>
+              {canExportLists && (
+                <div className="col-12 col-md-8 col-lg-9 d-flex flex-wrap align-items-center gap-2 justify-content-lg-end">
+                  <span className="text-muted small">Export filtered list:</span>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-success"
+                    disabled={displayStudents.length === 0}
+                    onClick={() => exportStudentsExcel(displayStudents)}
+                  >
+                    <i className="bi bi-file-earmark-spreadsheet me-1" aria-hidden />
+                    Excel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-danger"
+                    disabled={displayStudents.length === 0}
+                    onClick={() => exportStudentsPdf(displayStudents)}
+                  >
+                    <i className="bi bi-file-earmark-pdf me-1" aria-hidden />
+                    PDF
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+              <p className="text-muted small mb-0">
+                Showing <strong>{displayStudents.length}</strong> student{displayStudents.length === 1 ? '' : 's'}.
+                Filter by cohort, course, status, or search by name / ID. Use <strong>Sort</strong> to reorder the list (default: A–Z by name).
+              </p>
+              <button type="button" className="btn btn-sm btn-outline-secondary" onClick={clearFilters}>
+                <i className="bi bi-x-circle me-1" aria-hidden />
+                Clear filters
               </button>
             </div>
             
             <div className="table-responsive">
-              <table className="table table-hover">
-                  <thead>
+              <table className="table table-hover table-sm align-middle">
+                  <thead className="table-light">
                   <tr>
-                    <th>Student ID</th>
-                    <th>Name</th>
+                    <th scope="col">Student ID</th>
+                    <th scope="col">Name</th>
                     <th>Email</th>
                     <th>Cohort</th>
                     <th>Period</th>
@@ -762,14 +881,14 @@ const AcademyManagement = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {students.length === 0 ? (
+                  {displayStudents.length === 0 ? (
                     <tr>
                       <td colSpan="8" className="text-center text-muted">
-                        No students found. Click "Add Student" to create one.
+                        No students match the current filters. Try clearing filters or add a student.
                       </td>
                     </tr>
                   ) : (
-                    students.map((student) => (
+                    displayStudents.map((student) => (
                       <tr key={student.id}>
                         <td>{student.student_id}</td>
                         <td>{student.name}</td>
@@ -858,6 +977,20 @@ const AcademyManagement = () => {
             ) : instructors.length === 0 ? (
               <div className="text-center text-muted">No instructors found. Click "Add Instructor" to create one.</div>
             ) : (
+              <>
+              {canExportLists && (
+                <div className="d-flex flex-wrap justify-content-end align-items-center gap-2 mb-3">
+                  <span className="text-muted small me-auto">Export instructors (teachers):</span>
+                  <button type="button" className="btn btn-sm btn-success" onClick={() => exportInstructorsExcel(instructors)}>
+                    <i className="bi bi-file-earmark-spreadsheet me-1" aria-hidden />
+                    Excel
+                  </button>
+                  <button type="button" className="btn btn-sm btn-danger" onClick={() => exportInstructorsPdf(instructors)}>
+                    <i className="bi bi-file-earmark-pdf me-1" aria-hidden />
+                    PDF
+                  </button>
+                </div>
+              )}
               <div className="table-responsive">
                 <table className="table table-hover">
                   <thead>
@@ -928,20 +1061,10 @@ const AcademyManagement = () => {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         </div>
-      )}
-
-      {showStudentForm && (
-        <StudentForm
-          student={editingStudent}
-          onClose={() => {
-            setShowStudentForm(false);
-            setEditingStudent(null);
-            fetchStudents();
-          }}
-        />
       )}
 
       {showCourseForm && (
