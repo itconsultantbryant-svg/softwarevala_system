@@ -109,6 +109,12 @@ app.use(express.urlencoded({
   limit: '10mb' 
 }));
 
+// System audit: optional JWT user id + per-request HTTP log (ICT head reviews via /api/audit-logs)
+const attachAuditUserFromToken = require('./middleware/attachAuditUserFromToken');
+const auditHttpLogger = require('./middleware/auditHttpLogger');
+app.use('/api', attachAuditUserFromToken);
+app.use('/api', auditHttpLogger);
+
 // Ensure permanent storage dirs exist (entity-images: student/instructor/staff profile photos)
 const entityImagesDir = path.join(__dirname, '../uploads/entity-images');
 if (!fs.existsSync(entityImagesDir)) {
@@ -220,6 +226,7 @@ async function initializeDatabase() {
     const studentPaymentTransactionsPath = path.join(__dirname, 'database/migrations/026_student_payment_transactions.sql');
     const studentInvoicesPath = path.join(__dirname, 'database/migrations/027_student_invoices.sql');
     const gradeSubmissionsPath = path.join(__dirname, 'database/migrations/028_grade_submissions.sql');
+    const attendanceGeoCoordsPath = path.join(__dirname, 'database/migrations/029_attendance_office_geocoords.sql');
     
     if (tables.length === 0) {
       console.log('Initializing database schema...');
@@ -2253,6 +2260,35 @@ async function initializeDatabase() {
         console.log('✓ grade_submissions created');
       }
     }
+
+    // Attendance: office geolocation columns (sign-in / sign-out lat-lng audit)
+    if (fs.existsSync(attendanceGeoCoordsPath)) {
+      const geoSql = fs.readFileSync(attendanceGeoCoordsPath, 'utf8');
+      const geoStmts = geoSql.split(';').filter((s) => s.trim().length > 0);
+      let geoApplied = false;
+      for (const statement of geoStmts) {
+        if (statement.trim()) {
+          try {
+            await db.run(statement);
+            geoApplied = true;
+          } catch (e) {
+            const msg = (e && e.message) || '';
+            if (
+              msg.includes('duplicate column') ||
+              msg.includes('already exists') ||
+              msg.includes('42701')
+            ) {
+              // Column already present (SQLite / PostgreSQL)
+            } else {
+              console.error('Error executing attendance geo columns migration:', msg);
+            }
+          }
+        }
+      }
+      if (geoApplied) {
+        console.log('✓ staff_attendance geolocation columns applied');
+      }
+    }
     
     console.log('=== Column verification complete ===\n');
   } catch (error) {
@@ -2263,6 +2299,7 @@ async function initializeDatabase() {
 }
 
 // Routes
+app.use('/api/audit-logs', require('./routes/auditLogs'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/departments', require('./routes/departments'));

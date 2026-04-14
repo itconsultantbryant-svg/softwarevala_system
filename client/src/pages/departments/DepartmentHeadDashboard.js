@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import ReportTemplateRouter from './ReportTemplateRouter';
@@ -375,8 +375,23 @@ const DepartmentHeadDashboard = () => {
     );
   }
 
+  const isIctDept = department?.name?.toLowerCase().includes('ict');
+
   return (
     <div className="container-fluid">
+      <div className="row">
+        {isIctDept && (
+          <aside className="col-12 col-lg-2 mb-3 mb-lg-0">
+            <nav className="list-group list-group-flush shadow-sm border rounded" aria-label="ICT dashboard">
+              <div className="list-group-item bg-light py-2 fw-semibold small text-uppercase text-muted">ICT</div>
+              <Link to="/ict/audit-trail" className="list-group-item list-group-item-action">
+                <i className="bi bi-journal-text me-2 text-primary"></i>
+                System audit trail
+              </Link>
+            </nav>
+          </aside>
+        )}
+        <div className={isIctDept ? 'col-12 col-lg-10' : 'col-12'}>
       <div className="row mb-4">
         <div className="col-12 d-flex justify-content-between align-items-center">
           <div>
@@ -1641,6 +1656,8 @@ const DepartmentHeadDashboard = () => {
           </div>
         </div>
       )}
+        </div>
+      </div>
     </div>
   );
 };

@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react'
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { getSocket } from '../../config/socket';
+import { requestAttendancePosition } from '../../utils/attendanceGeolocation';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 
@@ -42,6 +43,9 @@ const AttendanceHistory = () => {
   const [bulkSubmitting, setBulkSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState('standard');
   const adminDefaultViewSet = useRef(false);
+  const [officeSite, setOfficeSite] = useState(null);
+  const [pendingGeo, setPendingGeo] = useState(null);
+  const [locating, setLocating] = useState(false);
 
   const fetchAttendance = useCallback(async () => {
     try {
@@ -110,6 +114,15 @@ const AttendanceHistory = () => {
     }
   }, []);
 
+  const fetchOfficeSite = useCallback(async () => {
+    try {
+      const res = await api.get('/attendance/office-site');
+      setOfficeSite(res.data);
+    } catch (e) {
+      setOfficeSite(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!user) return;
     if (user.role === 'Admin') {
@@ -125,12 +138,13 @@ const AttendanceHistory = () => {
       fetchAttendance();
     }
     fetchTodayStatus();
+    fetchOfficeSite();
 
     const interval = setInterval(() => {
       fetchTodayStatus();
     }, 60000);
     return () => clearInterval(interval);
-  }, [user, fetchAdminView, fetchUsers, fetchAttendance, fetchTodayStatus]);
+  }, [user, fetchAdminView, fetchUsers, fetchAttendance, fetchTodayStatus, fetchOfficeSite]);
 
   // Real-time updates via socket.io
   useEffect(() => {
@@ -171,8 +185,38 @@ const AttendanceHistory = () => {
 
   // (fetch* functions moved above into useCallback for stable deps)
 
+  const beginSignIn = async () => {
+    setLocating(true);
+    try {
+      const pos = await requestAttendancePosition();
+      setPendingGeo(pos);
+      setShowSignInModal(true);
+    } catch (e) {
+      alert(e?.message || 'Could not verify your location. You must be at the office compound to sign in.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const beginSignOut = async () => {
+    setLocating(true);
+    try {
+      const pos = await requestAttendancePosition();
+      setPendingGeo(pos);
+      setShowSignOutModal(true);
+    } catch (e) {
+      alert(e?.message || 'Could not verify your location. You must be at the office compound to sign out.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
   const handleSignIn = async () => {
     try {
+      if (!pendingGeo) {
+        alert('Location was not captured. Close this dialog and tap Sign In again.');
+        return;
+      }
       const now = new Date();
       const standardStartTime = new Date(now);
       standardStartTime.setHours(9, 0, 0, 0);
@@ -184,12 +228,16 @@ const AttendanceHistory = () => {
       }
       
       const response = await api.post('/attendance/sign-in', {
-        late_reason: isLate ? lateReason : null
+        late_reason: isLate ? lateReason : null,
+        latitude: pendingGeo.latitude,
+        longitude: pendingGeo.longitude,
+        accuracy_m: pendingGeo.accuracy_m
       });
       
       alert(response.data.message || 'Signed in successfully');
       setShowSignInModal(false);
       setLateReason('');
+      setPendingGeo(null);
       fetchTodayStatus();
       if (user.role === 'Admin') {
         fetchAdminView();
@@ -204,6 +252,10 @@ const AttendanceHistory = () => {
 
   const handleSignOut = async () => {
     try {
+      if (!pendingGeo) {
+        alert('Location was not captured. Close this dialog and tap Sign Out again.');
+        return;
+      }
       const now = new Date();
       const standardEndTime = new Date(now);
       standardEndTime.setHours(17, 0, 0, 0);
@@ -215,12 +267,16 @@ const AttendanceHistory = () => {
       }
       
       const response = await api.post('/attendance/sign-out', {
-        early_reason: isEarly ? earlyReason : null
+        early_reason: isEarly ? earlyReason : null,
+        latitude: pendingGeo.latitude,
+        longitude: pendingGeo.longitude,
+        accuracy_m: pendingGeo.accuracy_m
       });
       
       alert(response.data.message || 'Signed out successfully');
       setShowSignOutModal(false);
       setEarlyReason('');
+      setPendingGeo(null);
       fetchTodayStatus();
       if (user.role === 'Admin') {
         fetchAdminView();
@@ -517,6 +573,13 @@ const AttendanceHistory = () => {
             </h5>
           </div>
           <div className="card-body">
+            <div className="alert alert-info py-2 small mb-3" role="status">
+              <i className="bi bi-geo-alt-fill me-2"></i>
+              Sign in and sign out only work while you are physically at the office compound (
+              {officeSite?.name || 'PA Rib House Junction, Airfield, Sinkor, Monrovia, Liberia'}). Your device must
+              share GPS location (allow when prompted). Approx. on-site radius:{' '}
+              {officeSite?.radius_m != null ? `${officeSite.radius_m} m` : '200 m'}.
+            </div>
             <div className="row">
               <div className="col-md-6">
                 <p>
@@ -555,18 +618,40 @@ const AttendanceHistory = () => {
               <div className="col-12">
                 {todayStatus.canSignIn && (
                   <button
+                    type="button"
                     className="btn btn-success me-2"
-                    onClick={() => setShowSignInModal(true)}
+                    disabled={locating}
+                    onClick={beginSignIn}
                   >
-                    <i className="bi bi-box-arrow-in-right me-2"></i>Sign In
+                    {locating ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" />
+                        Locating…
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-geo-alt me-2"></i>Sign In (at office)
+                      </>
+                    )}
                   </button>
                 )}
                 {todayStatus.canSignOut && (
                   <button
+                    type="button"
                     className="btn btn-danger"
-                    onClick={() => setShowSignOutModal(true)}
+                    disabled={locating}
+                    onClick={beginSignOut}
                   >
-                    <i className="bi bi-box-arrow-right me-2"></i>Sign Out
+                    {locating ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" />
+                        Locating…
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-geo-alt me-2"></i>Sign Out (at office)
+                      </>
+                    )}
                   </button>
                 )}
                 {!todayStatus.canSignIn && !todayStatus.canSignOut && (
@@ -1244,9 +1329,17 @@ const AttendanceHistory = () => {
                 <button type="button" className="btn-close" onClick={() => {
                   setShowSignInModal(false);
                   setLateReason('');
+                  setPendingGeo(null);
                 }}></button>
               </div>
               <div className="modal-body">
+                <p className="small text-success mb-2">
+                  <i className="bi bi-check-circle me-1"></i>
+                  Location verified for office attendance
+                  {pendingGeo?.accuracy_m != null && (
+                    <span className="text-muted"> (GPS accuracy ~{Math.round(pendingGeo.accuracy_m)} m)</span>
+                  )}
+                </p>
                 <p>Current time: {new Date().toLocaleString()}</p>
                 <div className="mb-3">
                   <label className="form-label">Late Reason (if applicable)</label>
@@ -1263,6 +1356,7 @@ const AttendanceHistory = () => {
                 <button type="button" className="btn btn-secondary" onClick={() => {
                   setShowSignInModal(false);
                   setLateReason('');
+                  setPendingGeo(null);
                 }}>Cancel</button>
                 <button type="button" className="btn btn-success" onClick={handleSignIn}>
                   Sign In
@@ -1283,9 +1377,17 @@ const AttendanceHistory = () => {
                 <button type="button" className="btn-close" onClick={() => {
                   setShowSignOutModal(false);
                   setEarlyReason('');
+                  setPendingGeo(null);
                 }}></button>
               </div>
               <div className="modal-body">
+                <p className="small text-success mb-2">
+                  <i className="bi bi-check-circle me-1"></i>
+                  Location verified for office attendance
+                  {pendingGeo?.accuracy_m != null && (
+                    <span className="text-muted"> (GPS accuracy ~{Math.round(pendingGeo.accuracy_m)} m)</span>
+                  )}
+                </p>
                 <p>Current time: {new Date().toLocaleString()}</p>
                 <div className="mb-3">
                   <label className="form-label">Early Sign-Out Reason (if applicable)</label>
@@ -1302,6 +1404,7 @@ const AttendanceHistory = () => {
                 <button type="button" className="btn btn-secondary" onClick={() => {
                   setShowSignOutModal(false);
                   setEarlyReason('');
+                  setPendingGeo(null);
                 }}>Cancel</button>
                 <button type="button" className="btn btn-danger" onClick={handleSignOut}>
                   Sign Out

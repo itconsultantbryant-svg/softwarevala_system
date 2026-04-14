@@ -31,6 +31,7 @@ import DepartmentHeadDashboard from './pages/departments/DepartmentHeadDashboard
 import DepartmentReportsManagement from './pages/departments/DepartmentReportsManagement';
 import DepartmentReportHistory from './pages/departments/DepartmentReportHistory';
 import SupportTicketTracker from './pages/ict/SupportTicketTracker';
+import SystemAuditTrail from './pages/ict/SystemAuditTrail';
 import NotificationManagement from './pages/notifications/NotificationManagement';
 import Communications from './pages/notifications/Communications';
 import Notifications from './pages/notifications/Notifications';
@@ -107,6 +108,7 @@ function App() {
                           <Route path="/reports" element={<ReportsManagement />} />
                           <Route path="/my-reports-history" element={<MyReportsHistory />} />
                 <Route path="/department-dashboard" element={<PrivateRoute requiredRole="DepartmentHead"><DepartmentHeadDashboard /></PrivateRoute>} />
+                <Route path="/ict/audit-trail" element={<PrivateRoute><SystemAuditTrail /></PrivateRoute>} />
                 <Route path="/department-report-history" element={<PrivateRoute requiredRole="DepartmentHead"><DepartmentReportHistory /></PrivateRoute>} />
                 <Route path="/support-tickets" element={<PrivateRoute><SupportTicketTracker /></PrivateRoute>} />
                           <Route path="/notifications" element={<PrivateRoute requiredRole="Admin"><NotificationManagement /></PrivateRoute>} />

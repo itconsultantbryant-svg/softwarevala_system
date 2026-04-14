@@ -18,6 +18,7 @@ const Sidebar = () => {
   const [hasAcademyAccess, setHasAcademyAccess] = useState(false);
   const [hasStaffManagementAccess, setHasStaffManagementAccess] = useState(false);
   const [hasStudentPaymentAccess, setHasStudentPaymentAccess] = useState(false);
+  const [hasIctAuditAccess, setHasIctAuditAccess] = useState(false);
 
   /* =========================
      ROLE HELPERS
@@ -133,6 +134,27 @@ const Sidebar = () => {
      STUDENT PAYMENT ACCESS
   ========================= */
   const STUDENT_PAYMENT_EMAILS = ['sean@prinstinegroup.org'];
+  const checkIctAuditAccess = useCallback(async () => {
+    if (!user) {
+      setHasIctAuditAccess(false);
+      return;
+    }
+    if (normalizeRole(user.role) === 'admin') {
+      setHasIctAuditAccess(true);
+      return;
+    }
+    if (normalizeRole(user.role) !== 'departmenthead') {
+      setHasIctAuditAccess(false);
+      return;
+    }
+    try {
+      await api.get('/audit-logs/access');
+      setHasIctAuditAccess(true);
+    } catch {
+      setHasIctAuditAccess(false);
+    }
+  }, [user]);
+
   const checkStudentPaymentAccess = useCallback(async () => {
     if (!user) return setHasStudentPaymentAccess(false);
     const email = ((user.email ?? '') + '').toLowerCase().trim();
@@ -189,6 +211,7 @@ const Sidebar = () => {
     checkAcademyAccess();
     checkStaffManagementAccess();
     checkStudentPaymentAccess();
+    checkIctAuditAccess();
 
     if (normalizeRole(user.role) === 'departmenthead') {
       fetchUnreadFromAdmin();
@@ -205,7 +228,7 @@ const Sidebar = () => {
     socket.on('notification', handler);
 
     return () => socket.off('notification', handler);
-  }, [user, fetchUnreadCount, checkFinanceAccess, checkAcademyAccess, checkStaffManagementAccess, checkStudentPaymentAccess, fetchUnreadFromAdmin]);
+  }, [user, fetchUnreadCount, checkFinanceAccess, checkAcademyAccess, checkStaffManagementAccess, checkStudentPaymentAccess, checkIctAuditAccess, fetchUnreadFromAdmin]);
 
   /* =========================
      MENU CONFIG
@@ -278,7 +301,8 @@ const Sidebar = () => {
         { path: '/meetings', label: 'Meetings', icon: 'bi-calendar-event', roles: ['DepartmentHead'] },
         { path: '/call-memos', label: 'Call Memos', icon: 'bi-telephone', roles: ['DepartmentHead'] },
         { path: '/proposals', label: 'Proposals', icon: 'bi-file-earmark-check', roles: ['DepartmentHead'] },
-        { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['DepartmentHead'] }
+        { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['DepartmentHead'] },
+        { path: '/ict/audit-trail', label: 'System audit trail', icon: 'bi-journal-text', roles: ['DepartmentHead'], ictAudit: true }
       );
     }
 
@@ -296,7 +320,8 @@ const Sidebar = () => {
         { path: '/certificates', label: 'Certificates', icon: 'bi-award', roles: ['Admin'] },
         { path: '/support-tickets', label: 'Support Tickets', icon: 'bi-ticket-perforated', roles: ['Admin'] },
         { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['Admin'] },
-        { path: '/appraisals', label: 'Appraisals', icon: 'bi-star', roles: ['Admin'] }
+        { path: '/appraisals', label: 'Appraisals', icon: 'bi-star', roles: ['Admin'] },
+        { path: '/ict/audit-trail', label: 'System audit trail', icon: 'bi-journal-text', roles: ['Admin'] }
       );
     }
 
@@ -310,7 +335,7 @@ const Sidebar = () => {
     items.push({ path: '/profile', label: 'Profile', icon: 'bi-person', roles: ['*'] });
 
     return items;
-  }, [user, unreadCount, unreadFromAdmin]);
+  }, [user, unreadCount, unreadFromAdmin, hasIctAuditAccess]);
 
   /* =========================
      RENDER
@@ -359,6 +384,8 @@ const Sidebar = () => {
               let roleOk = false;
               if (item.staffManagement) {
                 roleOk = hasStaffManagementAccess;
+              } else if (item.ictAudit) {
+                roleOk = hasIctAuditAccess;
               } else if (item.studentPayment) {
                 roleOk = hasStudentPaymentAccess;
               } else if (item.finance) {
@@ -387,7 +414,8 @@ const Sidebar = () => {
                 (item.path === '/staff-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'staff') ||
                 (item.path === '/department-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'departmenthead') ||
                 (item.path === '/student' && location.pathname.startsWith('/student')) ||
-                (item.path === '/academy' && location.pathname.startsWith('/academy'));
+                (item.path === '/academy' && location.pathname.startsWith('/academy')) ||
+                (item.path === '/ict/audit-trail' && location.pathname.startsWith('/ict/audit-trail'));
               
               return (
                 <li key={`${item.path}-${item.label}`}>

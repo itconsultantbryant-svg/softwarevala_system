@@ -6,6 +6,7 @@ const router = express.Router();
 const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../utils/auth');
 const { formatISO } = require('date-fns');
+const { validateAtOffice, getOfficeSitePublic } = require('../utils/attendanceGeofence');
 
 // ============================
 // Helpers
@@ -33,6 +34,11 @@ router.get('/', authenticateToken, async (req, res) => {
     console.error(err);
     res.status(500).json({ error: 'Failed to fetch attendance' });
   }
+});
+
+// Office site (for UI copy) — same coordinates as server-side geofence
+router.get('/office-site', authenticateToken, (req, res) => {
+  res.json(getOfficeSitePublic());
 });
 
 // ============================
@@ -70,6 +76,12 @@ router.get('/today/status', authenticateToken, async (req, res) => {
 // ============================
 router.post('/sign-in', authenticateToken, async (req, res) => {
   try {
+    const acc = req.body?.accuracy_m != null ? parseFloat(req.body.accuracy_m) : null;
+    const geo = validateAtOffice(req.body?.latitude, req.body?.longitude, acc);
+    if (!geo.ok) {
+      return res.status(403).json({ error: geo.error || 'You must be at the office to sign in.' });
+    }
+
     const userId = req.user.id;
     let userName = req.user.name;
     if (!userName) {
@@ -98,6 +110,9 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Already signed in today' });
     }
 
+    const lat = parseFloat(req.body.latitude);
+    const lng = parseFloat(req.body.longitude);
+
     await db.run(
       `
       INSERT INTO staff_attendance (
@@ -108,9 +123,11 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         sign_in_late,
         sign_in_late_reason,
         status,
-        approved_at
+        approved_at,
+        sign_in_latitude,
+        sign_in_longitude
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       [
         userId,
@@ -120,7 +137,9 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
         isLate ? 1 : 0,
         isLate ? req.body?.late_reason || null : null,
         status,
-        approvedAt
+        approvedAt,
+        lat,
+        lng
       ]
     );
 
@@ -140,6 +159,12 @@ router.post('/sign-in', authenticateToken, async (req, res) => {
 // ============================
 router.post('/sign-out', authenticateToken, async (req, res) => {
   try {
+    const acc = req.body?.accuracy_m != null ? parseFloat(req.body.accuracy_m) : null;
+    const geo = validateAtOffice(req.body?.latitude, req.body?.longitude, acc);
+    if (!geo.ok) {
+      return res.status(403).json({ error: geo.error || 'You must be at the office to sign out.' });
+    }
+
     const today = getTodayDate();
     const now = new Date();
 
@@ -185,6 +210,9 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
       }
     }
 
+    const lat = parseFloat(req.body.latitude);
+    const lng = parseFloat(req.body.longitude);
+
     await db.run(
       `
       UPDATE staff_attendance
@@ -195,6 +223,8 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
           approved_by = ?,
           approved_at = ?,
           admin_notes = ?,
+          sign_out_latitude = ?,
+          sign_out_longitude = ?,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
       `,
@@ -206,6 +236,8 @@ router.post('/sign-out', authenticateToken, async (req, res) => {
         newApprovedBy,
         newApprovedAt,
         newAdminNotes,
+        lat,
+        lng,
         attendance.id
       ]
     );
