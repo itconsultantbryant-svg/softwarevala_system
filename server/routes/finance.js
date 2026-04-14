@@ -102,6 +102,101 @@ function generateAssetId(category) {
   return `A${timestamp}-${categoryCode}-01`;
 }
 
+function roundMoney(value) {
+  const n = parseFloat(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Recalculate all petty cash ledgers in chronological order. Each period's starting_balance
+ * becomes the previous period's closing balance; running balances on transactions are updated.
+ * Call this after any create/update/delete so monthly carry-forward stays consistent.
+ */
+async function recalculateEntirePettyCashBook() {
+  const ledgers = await db.all(
+    'SELECT id FROM petty_cash_ledgers ORDER BY year ASC, month ASC'
+  );
+  let previousClosingBalance = 0;
+  for (const { id: ledgerId } of ledgers) {
+    await db.run('UPDATE petty_cash_ledgers SET starting_balance = ? WHERE id = ?', [
+      roundMoney(previousClosingBalance),
+      ledgerId
+    ]);
+    const ledger = await db.get('SELECT * FROM petty_cash_ledgers WHERE id = ?', [ledgerId]);
+    const transactions = await db.all(
+      'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date ASC, id ASC',
+      [ledgerId]
+    );
+    let runningBalance = roundMoney(ledger.starting_balance);
+    for (const t of transactions) {
+      runningBalance = roundMoney(
+        runningBalance +
+          roundMoney(t.amount_deposited) -
+          roundMoney(t.amount_withdrawn)
+      );
+      await db.run('UPDATE petty_cash_transactions SET balance = ? WHERE id = ?', [
+        runningBalance,
+        t.id
+      ]);
+    }
+    previousClosingBalance = runningBalance;
+  }
+}
+
+async function getOrCreateLedgerForDate(transDate, petty_cash_custodian_id, userId) {
+  const month = transDate.getMonth() + 1;
+  const year = transDate.getFullYear();
+
+  let ledger = await db.get(
+    'SELECT * FROM petty_cash_ledgers WHERE year = ? AND month = ?',
+    [year, month]
+  );
+
+  if (!ledger) {
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevLedger = await db.get(
+      'SELECT id FROM petty_cash_ledgers WHERE year = ? AND month = ?',
+      [prevYear, prevMonth]
+    );
+
+    let startingBalance = 0;
+    if (prevLedger) {
+      const prevTransactions = await db.all(
+        'SELECT amount_deposited, amount_withdrawn FROM petty_cash_transactions WHERE ledger_id = ?',
+        [prevLedger.id]
+      );
+      const prevLedgerData = await db.get(
+        'SELECT starting_balance FROM petty_cash_ledgers WHERE id = ?',
+        [prevLedger.id]
+      );
+      const prevDeposited = prevTransactions.reduce(
+        (sum, t) => sum + roundMoney(t.amount_deposited),
+        0
+      );
+      const prevWithdrawn = prevTransactions.reduce(
+        (sum, t) => sum + roundMoney(t.amount_withdrawn),
+        0
+      );
+      startingBalance = roundMoney(
+        roundMoney(prevLedgerData?.starting_balance || 0) + prevDeposited - prevWithdrawn
+      );
+    }
+
+    const ledgerResult = await db.run(
+      `INSERT INTO petty_cash_ledgers 
+       (month, year, starting_balance, petty_cash_custodian_id, created_by, approval_status)
+       VALUES (?, ?, ?, ?, ?, 'Approved')`,
+      [month, year, startingBalance, petty_cash_custodian_id, userId]
+    );
+
+    ledger = await db.get('SELECT * FROM petty_cash_ledgers WHERE id = ?', [ledgerResult.lastID]);
+  }
+
+  return ledger;
+}
+
 // ==========================================
 // PETTY CASH ROUTES (Simplified - No Approval Flow)
 // ==========================================
@@ -119,6 +214,7 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
     let query = `
       SELECT pct.*,
              pcl.month, pcl.year,
+             pcl.petty_cash_custodian_id,
              COALESCE(cust.name, cust_direct.name) as custodian_name,
              cust_staff.staff_id as custodian_staff_id,
              creator.name as created_by_name
@@ -149,12 +245,14 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
 
     // Summary: total deposited, total withdrawn, and closing balance = last transaction's running balance (or 0 if none)
     const summary = transactions.reduce((acc, t) => {
-      acc.total_deposited += parseFloat(t.amount_deposited || 0);
-      acc.total_withdrawn += parseFloat(t.amount_withdrawn || 0);
+      acc.total_deposited += roundMoney(t.amount_deposited || 0);
+      acc.total_withdrawn += roundMoney(t.amount_withdrawn || 0);
       return acc;
     }, { total_deposited: 0, total_withdrawn: 0 });
+    summary.total_deposited = roundMoney(summary.total_deposited);
+    summary.total_withdrawn = roundMoney(summary.total_withdrawn);
     summary.closing_balance = transactions.length > 0
-      ? parseFloat(transactions[transactions.length - 1].balance || 0)
+      ? roundMoney(transactions[transactions.length - 1].balance || 0)
       : 0;
 
     // Group by period (month/year)
@@ -172,8 +270,8 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
         };
       }
       byPeriod[period].transactions.push(t);
-      byPeriod[period].total_deposited += parseFloat(t.amount_deposited || 0);
-      byPeriod[period].total_withdrawn += parseFloat(t.amount_withdrawn || 0);
+      byPeriod[period].total_deposited += roundMoney(t.amount_deposited || 0);
+      byPeriod[period].total_withdrawn += roundMoney(t.amount_withdrawn || 0);
     });
 
     // Calculate closing balance for each period
@@ -186,13 +284,17 @@ router.get('/petty-cash', authenticateToken, async (req, res) => {
             'SELECT starting_balance FROM petty_cash_ledgers WHERE year = ? AND month = ?',
             [ledger.year, ledger.month]
           );
-          period.starting_balance = ledgerData?.starting_balance || 0;
+          period.starting_balance = roundMoney(ledgerData?.starting_balance || 0);
         } catch (err) {
           console.error('Error fetching ledger data for period:', err);
           period.starting_balance = 0;
         }
       }
-      period.closing_balance = period.starting_balance + period.total_deposited - period.total_withdrawn;
+      period.total_deposited = roundMoney(period.total_deposited);
+      period.total_withdrawn = roundMoney(period.total_withdrawn);
+      period.closing_balance = roundMoney(
+        period.starting_balance + period.total_deposited - period.total_withdrawn
+      );
     }
 
     res.json({ 
@@ -310,9 +412,9 @@ router.post('/petty-cash', authenticateToken, [
     }
 
     // Validate that at least one amount is provided
-    const deposit = parseFloat(amount_deposit) || 0;
-    const withdrawal = parseFloat(amount_withdrawal) || 0;
-    
+    const deposit = roundMoney(amount_deposit);
+    const withdrawal = roundMoney(amount_withdrawal);
+
     if (deposit === 0 && withdrawal === 0) {
       return res.status(400).json({ error: 'Either deposit or withdrawal amount is required' });
     }
@@ -346,72 +448,47 @@ router.post('/petty-cash', authenticateToken, [
       return res.status(400).json({ error: 'Invalid custodian. Must be a valid active staff member or department head.' });
     }
 
-    // Get or create ledger for the month/year of transaction
     const month = transDate.getMonth() + 1;
     const year = transDate.getFullYear();
 
-    let ledger = await db.get(
-      'SELECT * FROM petty_cash_ledgers WHERE year = ? AND month = ?',
-      [year, month]
-    );
+    const ledger = await getOrCreateLedgerForDate(transDate, petty_cash_custodian_id, req.user.id);
 
-    if (!ledger) {
-      // Create new ledger for this month/year
-      const prevMonth = month === 1 ? 12 : month - 1;
-      const prevYear = month === 1 ? year - 1 : year;
-      const prevLedger = await db.get(
-        'SELECT id FROM petty_cash_ledgers WHERE year = ? AND month = ?',
-        [prevYear, prevMonth]
-      );
-      
-      let startingBalance = 0;
-      if (prevLedger) {
-        const prevTransactions = await db.all(
-          'SELECT amount_deposited, amount_withdrawn FROM petty_cash_transactions WHERE ledger_id = ?',
-          [prevLedger.id]
-        );
-        const prevLedgerData = await db.get(
-          'SELECT starting_balance FROM petty_cash_ledgers WHERE id = ?',
-          [prevLedger.id]
-        );
-        const prevDeposited = prevTransactions.reduce((sum, t) => sum + (parseFloat(t.amount_deposited) || 0), 0);
-        const prevWithdrawn = prevTransactions.reduce((sum, t) => sum + (parseFloat(t.amount_withdrawn) || 0), 0);
-        startingBalance = (prevLedgerData?.starting_balance || 0) + prevDeposited - prevWithdrawn;
-      }
-
-      const ledgerResult = await db.run(
-        `INSERT INTO petty_cash_ledgers 
-         (month, year, starting_balance, petty_cash_custodian_id, created_by, approval_status)
-         VALUES (?, ?, ?, ?, ?, 'Approved')`,
-        [month, year, startingBalance, petty_cash_custodian_id, req.user.id]
-      );
-      
-      ledger = await db.get('SELECT * FROM petty_cash_ledgers WHERE id = ?', [ledgerResult.lastID]);
-    }
-
-    // Get last transaction balance for this ledger
-    const lastTransaction = await db.get(
-      'SELECT balance FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date DESC, id DESC LIMIT 1',
-      [ledger.id]
-    );
-    const previousBalance = lastTransaction ? lastTransaction.balance : ledger.starting_balance;
-    const newBalance = previousBalance + deposit - withdrawal;
-
-    // Generate slip number
     const transactionCount = await db.get(
       'SELECT COUNT(*) as count FROM petty_cash_transactions WHERE ledger_id = ?',
       [ledger.id]
     );
     const slipNo = `PC-${ledger.year}-${String(ledger.month).padStart(2, '0')}-${String((transactionCount.count || 0) + 1).padStart(3, '0')}`;
 
-    // Create transaction
     const result = await db.run(
       `INSERT INTO petty_cash_transactions 
        (ledger_id, transaction_date, petty_cash_slip_no, description, amount_deposited, 
         amount_withdrawn, balance, charged_to, approved_by_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [ledger.id, transaction_date, slipNo, description || 'Petty cash transaction', 
-       deposit, withdrawal, newBalance, charged_to || null, req.user.id]
+       deposit, withdrawal, 0, charged_to || null, req.user.id]
+    );
+
+    await recalculateEntirePettyCashBook();
+
+    const createdTx = await db.get(
+      'SELECT balance FROM petty_cash_transactions WHERE id = ?',
+      [result.lastID]
+    );
+    const newBalance = roundMoney(createdTx?.balance);
+
+    const allTransactions = await db.all(
+      'SELECT amount_deposited, amount_withdrawn FROM petty_cash_transactions WHERE ledger_id = ?',
+      [ledger.id]
+    );
+    const ledgerAfter = await db.get('SELECT starting_balance FROM petty_cash_ledgers WHERE id = ?', [ledger.id]);
+    const totalDeposited = roundMoney(
+      allTransactions.reduce((sum, t) => sum + roundMoney(t.amount_deposited), 0)
+    );
+    const totalWithdrawn = roundMoney(
+      allTransactions.reduce((sum, t) => sum + roundMoney(t.amount_withdrawn), 0)
+    );
+    const closingBalance = roundMoney(
+      roundMoney(ledgerAfter?.starting_balance || 0) + totalDeposited - totalWithdrawn
     );
 
     await logAction(req.user.id, 'create_petty_cash', 'finance', result.lastID, { 
@@ -420,16 +497,6 @@ router.post('/petty-cash', authenticateToken, [
       amount_withdrawal: withdrawal 
     }, req);
 
-    // Calculate totals for ledger
-    const allTransactions = await db.all(
-      'SELECT amount_deposited, amount_withdrawn FROM petty_cash_transactions WHERE ledger_id = ?',
-      [ledger.id]
-    );
-    const totalDeposited = allTransactions.reduce((sum, t) => sum + (parseFloat(t.amount_deposited) || 0), 0);
-    const totalWithdrawn = allTransactions.reduce((sum, t) => sum + (parseFloat(t.amount_withdrawn) || 0), 0);
-    const closingBalance = ledger.starting_balance + totalDeposited - totalWithdrawn;
-
-    // Emit real-time event
     if (global.io) {
       global.io.emit('petty_cash_created', {
         id: result.lastID,
@@ -481,7 +548,8 @@ router.put('/petty-cash/:id', authenticateToken, [
   body('amount_deposit').optional().isFloat({ min: 0 }).withMessage('Amount deposit must be a non-negative number'),
   body('amount_withdrawal').optional().isFloat({ min: 0 }).withMessage('Amount withdrawal must be a non-negative number'),
   body('description').optional().trim(),
-  body('charged_to').optional().trim()
+  body('charged_to').optional().trim(),
+  body('petty_cash_custodian_id').optional()
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -510,6 +578,14 @@ router.put('/petty-cash/:id', authenticateToken, [
       return res.status(404).json({ error: 'Petty cash entry not found' });
     }
 
+    const currentLedger = await db.get(
+      'SELECT * FROM petty_cash_ledgers WHERE id = ?',
+      [transaction.ledger_id]
+    );
+    if (!currentLedger) {
+      return res.status(404).json({ error: 'Ledger not found for this transaction' });
+    }
+
     const updates = req.body;
     const updateFields = [];
     const params = [];
@@ -524,10 +600,9 @@ router.put('/petty-cash/:id', authenticateToken, [
       params.push(updates.transaction_date);
     }
 
-    // Validate amounts - ensure both are not provided
-    const deposit = updates.amount_deposit !== undefined ? parseFloat(updates.amount_deposit) || 0 : undefined;
-    const withdrawal = updates.amount_withdrawal !== undefined ? parseFloat(updates.amount_withdrawal) || 0 : undefined;
-    
+    const deposit = updates.amount_deposit !== undefined ? roundMoney(updates.amount_deposit) : undefined;
+    const withdrawal = updates.amount_withdrawal !== undefined ? roundMoney(updates.amount_withdrawal) : undefined;
+
     if (deposit !== undefined && deposit < 0) {
       return res.status(400).json({ error: 'Amount deposit cannot be negative' });
     }
@@ -535,30 +610,45 @@ router.put('/petty-cash/:id', authenticateToken, [
       return res.status(400).json({ error: 'Amount withdrawal cannot be negative' });
     }
 
-    // Get existing amounts
-    const existingDeposit = parseFloat(transaction.amount_deposited) || 0;
-    const existingWithdrawal = parseFloat(transaction.amount_withdrawn) || 0;
-    
-    // Determine final values
+    const existingDeposit = roundMoney(transaction.amount_deposited);
+    const existingWithdrawal = roundMoney(transaction.amount_withdrawn);
+
     const finalDeposit = deposit !== undefined ? deposit : existingDeposit;
     const finalWithdrawal = withdrawal !== undefined ? withdrawal : existingWithdrawal;
-    
-    // Check if both are provided and both are > 0
+
     if (finalDeposit > 0 && finalWithdrawal > 0) {
       return res.status(400).json({ error: 'Cannot have both deposit and withdrawal in the same transaction' });
     }
-    // Check if both are zero
     if (finalDeposit === 0 && finalWithdrawal === 0) {
       return res.status(400).json({ error: 'Either deposit or withdrawal amount must be greater than zero' });
     }
 
+    if (updates.transaction_date) {
+      const d = new Date(updates.transaction_date);
+      const m = d.getMonth() + 1;
+      const y = d.getFullYear();
+      if (m !== currentLedger.month || y !== currentLedger.year) {
+        const custodianId = updates.petty_cash_custodian_id || currentLedger.petty_cash_custodian_id;
+        const newLedger = await getOrCreateLedgerForDate(d, custodianId, req.user.id);
+        const countRow = await db.get(
+          'SELECT COUNT(*) as count FROM petty_cash_transactions WHERE ledger_id = ? AND id != ?',
+          [newLedger.id, transaction.id]
+        );
+        const slipNo = `PC-${newLedger.year}-${String(newLedger.month).padStart(2, '0')}-${String((countRow.count || 0) + 1).padStart(3, '0')}`;
+        updateFields.push('ledger_id = ?');
+        params.push(newLedger.id);
+        updateFields.push('petty_cash_slip_no = ?');
+        params.push(slipNo);
+      }
+    }
+
     if (updates.amount_deposit !== undefined) {
       updateFields.push('amount_deposited = ?');
-      params.push(deposit);
+      params.push(finalDeposit);
     }
     if (updates.amount_withdrawal !== undefined) {
       updateFields.push('amount_withdrawn = ?');
-      params.push(withdrawal);
+      params.push(finalWithdrawal);
     }
     if (updates.description !== undefined) {
       updateFields.push('description = ?');
@@ -581,30 +671,19 @@ router.put('/petty-cash/:id', authenticateToken, [
       params
     );
 
-    // Recalculate balances for all transactions in this ledger
-    const ledger = await db.get('SELECT * FROM petty_cash_ledgers WHERE id = ?', [transaction.ledger_id]);
-    if (!ledger) {
-      return res.status(404).json({ error: 'Ledger not found for this transaction' });
-    }
-
-    const allTransactions = await db.all(
-      'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date, id',
-      [transaction.ledger_id]
-    );
-
-    let runningBalance = ledger.starting_balance || 0;
-    for (const t of allTransactions) {
-      runningBalance = runningBalance + (parseFloat(t.amount_deposited) || 0) - (parseFloat(t.amount_withdrawn) || 0);
-      await db.run('UPDATE petty_cash_transactions SET balance = ? WHERE id = ?', [runningBalance, t.id]);
-    }
+    await recalculateEntirePettyCashBook();
 
     await logAction(req.user.id, 'update_petty_cash', 'finance', req.params.id, updates, req);
 
-    // Emit real-time event
+    const updatedRow = await db.get(
+      'SELECT ledger_id FROM petty_cash_transactions WHERE id = ?',
+      [req.params.id]
+    );
+
     if (global.io) {
       global.io.emit('petty_cash_updated', {
         id: req.params.id,
-        ledger_id: transaction.ledger_id,
+        ledger_id: updatedRow?.ledger_id ?? transaction.ledger_id,
         ...updates,
         updated_by: req.user.id
       });
@@ -620,26 +699,7 @@ router.put('/petty-cash/:id', authenticateToken, [
 // Reset all petty cash balances (Admin only - recalculates running balances in proper order)
 router.post('/petty-cash/reset-all-balances', authenticateToken, requireRole('Admin'), async (req, res) => {
   try {
-    // Get ledgers in chronological order (oldest first)
-    const ledgers = await db.all('SELECT id FROM petty_cash_ledgers ORDER BY year ASC, month ASC');
-    
-    let previousClosingBalance = 0;
-    for (const ledger of ledgers) {
-      // This period's starting balance = previous period's closing balance
-      await db.run('UPDATE petty_cash_ledgers SET starting_balance = ? WHERE id = ?', [previousClosingBalance, ledger.id]);
-
-      const transactions = await db.all(
-        'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date ASC, id ASC',
-        [ledger.id]
-      );
-
-      let runningBalance = previousClosingBalance;
-      for (const t of transactions) {
-        runningBalance = runningBalance + (parseFloat(t.amount_deposited) || 0) - (parseFloat(t.amount_withdrawn) || 0);
-        await db.run('UPDATE petty_cash_transactions SET balance = ? WHERE id = ?', [runningBalance, t.id]);
-      }
-      previousClosingBalance = runningBalance;
-    }
+    await recalculateEntirePettyCashBook();
 
     await logAction(req.user.id, 'reset_all_petty_cash_balances', 'finance', null, {}, req);
 
@@ -667,32 +727,9 @@ router.delete('/petty-cash/:id', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'Petty cash entry not found' });
     }
 
-    // Delete the transaction
     await db.run('DELETE FROM petty_cash_transactions WHERE id = ?', [req.params.id]);
 
-    // Recalculate balances for remaining transactions in this ledger
-    const ledger = await db.get('SELECT * FROM petty_cash_ledgers WHERE id = ?', [transaction.ledger_id]);
-    if (!ledger) {
-      return res.status(404).json({ error: 'Ledger not found for this transaction' });
-    }
-
-    const allTransactions = await db.all(
-      'SELECT * FROM petty_cash_transactions WHERE ledger_id = ? ORDER BY transaction_date, id',
-      [transaction.ledger_id]
-    );
-
-    // If no transactions remain, reset starting balance to 0
-    if (allTransactions.length === 0) {
-      await db.run('UPDATE petty_cash_ledgers SET starting_balance = 0 WHERE id = ?', [transaction.ledger_id]);
-      console.log(`[PettyCash] Reset starting balance to 0 for ledger ${transaction.ledger_id} after deleting all transactions`);
-    } else {
-      // Recalculate balances for remaining transactions
-      let runningBalance = ledger.starting_balance || 0;
-      for (const t of allTransactions) {
-        runningBalance = runningBalance + (parseFloat(t.amount_deposited) || 0) - (parseFloat(t.amount_withdrawn) || 0);
-        await db.run('UPDATE petty_cash_transactions SET balance = ? WHERE id = ?', [runningBalance, t.id]);
-      }
-    }
+    await recalculateEntirePettyCashBook();
 
     await logAction(req.user.id, 'delete_petty_cash', 'finance', req.params.id, {}, req);
 
@@ -782,9 +819,15 @@ router.get('/petty-cash/ledgers', authenticateToken, async (req, res) => {
         [ledger.id]
       );
       
-      ledger.total_deposited = transactions.reduce((sum, t) => sum + (parseFloat(t.amount_deposited) || 0), 0);
-      ledger.total_withdrawn = transactions.reduce((sum, t) => sum + (parseFloat(t.amount_withdrawn) || 0), 0);
-      ledger.closing_balance = ledger.starting_balance + ledger.total_deposited - ledger.total_withdrawn;
+      ledger.total_deposited = roundMoney(
+        transactions.reduce((sum, t) => sum + roundMoney(t.amount_deposited), 0)
+      );
+      ledger.total_withdrawn = roundMoney(
+        transactions.reduce((sum, t) => sum + roundMoney(t.amount_withdrawn), 0)
+      );
+      ledger.closing_balance = roundMoney(
+        roundMoney(ledger.starting_balance) + ledger.total_deposited - ledger.total_withdrawn
+      );
     }
 
     res.json({ ledgers });
@@ -833,8 +876,8 @@ router.get('/petty-cash/ledgers/:id', authenticateToken, async (req, res) => {
     );
 
     const totals = transactions.reduce((acc, t) => {
-      acc.deposited += parseFloat(t.amount_deposited || 0);
-      acc.withdrawn += parseFloat(t.amount_withdrawn || 0);
+      acc.deposited += roundMoney(t.amount_deposited || 0);
+      acc.withdrawn += roundMoney(t.amount_withdrawn || 0);
       return acc;
     }, { deposited: 0, withdrawn: 0 });
 
@@ -846,9 +889,11 @@ router.get('/petty-cash/ledgers/:id', authenticateToken, async (req, res) => {
     }
 
     ledger.transactions = transactions;
-    ledger.total_deposited = totals.deposited;
-    ledger.total_withdrawn = totals.withdrawn;
-    ledger.closing_balance = ledger.starting_balance + totals.deposited - totals.withdrawn;
+    ledger.total_deposited = roundMoney(totals.deposited);
+    ledger.total_withdrawn = roundMoney(totals.withdrawn);
+    ledger.closing_balance = roundMoney(
+      roundMoney(ledger.starting_balance) + ledger.total_deposited - ledger.total_withdrawn
+    );
 
     res.json({ ledger });
   } catch (error) {

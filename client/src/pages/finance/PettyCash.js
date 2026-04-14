@@ -335,7 +335,9 @@ const PettyCash = () => {
       
       setFormData({
         transaction_date: transactionDate,
-        petty_cash_custodian_id: transaction.custodian_id || transaction.petty_cash_custodian_id || '',
+        petty_cash_custodian_id: String(
+          transaction.petty_cash_custodian_id ?? transaction.custodian_id ?? ''
+        ),
         amount_deposit: transaction.amount_deposited || '',
         amount_withdrawal: transaction.amount_withdrawn || '',
         description: transaction.description || '',
