@@ -2,10 +2,15 @@ import React, { useState, useEffect } from 'react';
 import api from '../../config/api';
 import CertificateForm from './CertificateForm';
 import CertificateView from './CertificateView';
+import { useAuth } from '../../hooks/useAuth';
 
 const CertificateManagement = ({ embedded = false }) => {
+  const { user } = useAuth();
   const [certificates, setCertificates] = useState([]);
+  const [cohorts, setCohorts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [cohortLoading, setCohortLoading] = useState(false);
+  const [cohortSavingId, setCohortSavingId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editingCertificate, setEditingCertificate] = useState(null);
   const [viewingCertificate, setViewingCertificate] = useState(null);
@@ -13,6 +18,9 @@ const CertificateManagement = ({ embedded = false }) => {
 
   useEffect(() => {
     fetchCertificates();
+    if (user?.role === 'Admin') {
+      fetchCohorts();
+    }
   }, []);
 
   useEffect(() => {
@@ -32,6 +40,19 @@ const CertificateManagement = ({ embedded = false }) => {
       console.error('Error fetching certificates:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCohorts = async () => {
+    try {
+      setCohortLoading(true);
+      const response = await api.get('/academy/cohorts');
+      setCohorts(response.data.cohorts || []);
+    } catch (error) {
+      console.error('Error fetching cohorts:', error);
+      setCohorts([]);
+    } finally {
+      setCohortLoading(false);
     }
   };
 
@@ -103,6 +124,21 @@ const CertificateManagement = ({ embedded = false }) => {
     }
   };
 
+  const handleCohortWindowChange = async (cohortId, field, value) => {
+    try {
+      setCohortSavingId(cohortId);
+      await api.put(`/academy/cohorts/${cohortId}`, { [field]: value });
+      setCohorts((prev) =>
+        prev.map((c) => (c.id === cohortId ? { ...c, [field]: value } : c))
+      );
+    } catch (error) {
+      console.error('Error updating cohort certificate window:', error);
+      alert(error.response?.data?.error || 'Failed to update certificate verification window');
+    } finally {
+      setCohortSavingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="d-flex justify-content-center">
@@ -150,6 +186,89 @@ const CertificateManagement = ({ embedded = false }) => {
           </div>
         </div>
       </div>
+
+      {/* Certificate verification window controls */}
+      {user?.role === 'Admin' && (
+        <div className="card mb-3">
+          <div className="card-header d-flex justify-content-between align-items-center">
+            <strong>Certificate Verification Window (Per Cohort)</strong>
+            <button type="button" className="btn btn-sm btn-outline-primary" onClick={fetchCohorts} disabled={cohortLoading}>
+              {cohortLoading ? 'Refreshing...' : 'Refresh'}
+            </button>
+          </div>
+          <div className="card-body">
+            {cohortLoading ? (
+              <div className="text-muted">Loading cohorts...</div>
+            ) : cohorts.length === 0 ? (
+              <div className="text-muted">No cohorts found.</div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-sm align-middle">
+                  <thead>
+                    <tr>
+                      <th>Cohort</th>
+                      <th>Period</th>
+                      <th>Verification</th>
+                      <th>Start</th>
+                      <th>End</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cohorts.map((cohort) => (
+                      <tr key={cohort.id}>
+                        <td>{cohort.name}</td>
+                        <td>{cohort.period || '-'}</td>
+                        <td>
+                          <span className={`badge ${Number(cohort.cert_access_enabled || 0) === 1 ? 'bg-success' : 'bg-secondary'}`}>
+                            {Number(cohort.cert_access_enabled || 0) === 1 ? 'Open' : 'Closed'}
+                          </span>
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            value={cohort.cert_access_start ? String(cohort.cert_access_start).slice(0, 10) : ''}
+                            onChange={(e) => handleCohortWindowChange(cohort.id, 'cert_access_start', e.target.value || null)}
+                            disabled={cohortSavingId === cohort.id}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="date"
+                            className="form-control form-control-sm"
+                            value={cohort.cert_access_end ? String(cohort.cert_access_end).slice(0, 10) : ''}
+                            onChange={(e) => handleCohortWindowChange(cohort.id, 'cert_access_end', e.target.value || null)}
+                            disabled={cohortSavingId === cohort.id}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-success me-2"
+                            disabled={cohortSavingId === cohort.id || Number(cohort.cert_access_enabled || 0) === 1}
+                            onClick={() => handleCohortWindowChange(cohort.id, 'cert_access_enabled', true)}
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            disabled={cohortSavingId === cohort.id || Number(cohort.cert_access_enabled || 0) === 0}
+                            onClick={() => handleCohortWindowChange(cohort.id, 'cert_access_enabled', false)}
+                          >
+                            Close
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Certificates List */}
       <div className="card">
