@@ -92,6 +92,50 @@ function isCertificateWindowOpenForCohort(row) {
   return true;
 }
 
+async function getCertificateColumnNames() {
+  try {
+    const pragma = await db.all("PRAGMA table_info(certificates)");
+    if (Array.isArray(pragma) && pragma.length > 0) {
+      return pragma.map((c) => c.name);
+    }
+  } catch (_err) {}
+  try {
+    const cols = await db.all("SELECT column_name FROM information_schema.columns WHERE table_name = 'certificates' AND table_schema = 'public'");
+    if (Array.isArray(cols) && cols.length > 0) {
+      return cols.map((c) => c.column_name);
+    }
+  } catch (_err) {}
+  return [];
+}
+
+async function ensureCertificateStorageColumns() {
+  const certColumns = await getCertificateColumnNames();
+  try {
+    if (!certColumns.includes('file_path')) {
+      await db.run('ALTER TABLE certificates ADD COLUMN file_path TEXT');
+    }
+  } catch (_err) {}
+  try {
+    if (!certColumns.includes('file_type')) {
+      await db.run('ALTER TABLE certificates ADD COLUMN file_type TEXT');
+    }
+  } catch (_err) {}
+  try {
+    if (!certColumns.includes('completion_date')) {
+      await db.run('ALTER TABLE certificates ADD COLUMN completion_date DATE');
+    }
+  } catch (_err) {}
+}
+
+router.use(async (_req, _res, next) => {
+  try {
+    await ensureCertificateStorageColumns();
+  } catch (_err) {
+    // non-fatal; route handlers will surface concrete DB errors if any
+  }
+  next();
+});
+
 // Get all certificates (Admin + Academy team)
 router.get('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', 'DepartmentHead'), async (req, res) => {
   try {
@@ -272,20 +316,37 @@ router.post('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', 
     const fileType = fileExt === '.pdf' ? 'pdf' : fileExt === '.png' ? 'png' : 'jpeg';
     const filePath = `/uploads/certificates/${req.file.filename}`;
 
+    const certColumns = await getCertificateColumnNames();
+    const fields = ['certificate_id', 'student_id', 'course_id', 'issue_date', 'grade', 'verification_code'];
+    const values = [
+      certificateId,
+      student_id,
+      course_id,
+      issue_date || new Date().toISOString().split('T')[0],
+      grade || null,
+      verificationCode
+    ];
+    if (certColumns.includes('file_path')) {
+      fields.push('file_path');
+      values.push(filePath);
+    }
+    if (certColumns.includes('file_type')) {
+      fields.push('file_type');
+      values.push(fileType);
+    }
+    if (certColumns.includes('completion_date')) {
+      fields.push('completion_date');
+      values.push(completion_date || null);
+    }
+    if (certColumns.includes('pdf_path')) {
+      fields.push('pdf_path');
+      values.push(filePath);
+    }
+
+    const placeholders = fields.map(() => '?').join(', ');
     const result = await db.run(
-      `INSERT INTO certificates (certificate_id, student_id, course_id, issue_date, grade, verification_code, file_path, file_type, completion_date)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        certificateId,
-        student_id,
-        course_id,
-        issue_date || new Date().toISOString().split('T')[0],
-        grade || null,
-        verificationCode,
-        filePath,
-        fileType,
-        completion_date || null
-      ]
+      `INSERT INTO certificates (${fields.join(', ')}) VALUES (${placeholders})`,
+      values
     );
 
     // Update enrollment status if exists
@@ -331,7 +392,10 @@ router.put('/:id', authenticateToken, requireRole('Admin', 'Staff', 'Instructor'
     const certificateId = req.params.id;
     const { grade, issue_date, completion_date } = req.body;
 
-    const certificate = await db.get('SELECT id, file_path FROM certificates WHERE id = ?', [certificateId]);
+    const certificate = await db.get(
+      'SELECT id, COALESCE(file_path, pdf_path) as file_path FROM certificates WHERE id = ?',
+      [certificateId]
+    );
     if (!certificate) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
@@ -366,10 +430,19 @@ router.put('/:id', authenticateToken, requireRole('Admin', 'Staff', 'Instructor'
       const fileType = fileExt === '.pdf' ? 'pdf' : fileExt === '.png' ? 'png' : 'jpeg';
       const filePath = `/uploads/certificates/${req.file.filename}`;
 
-      updates.push('file_path = ?');
-      updates.push('file_type = ?');
-      params.push(filePath);
-      params.push(fileType);
+      const certColumns = await getCertificateColumnNames();
+      if (certColumns.includes('file_path')) {
+        updates.push('file_path = ?');
+        params.push(filePath);
+      }
+      if (certColumns.includes('pdf_path')) {
+        updates.push('pdf_path = ?');
+        params.push(filePath);
+      }
+      if (certColumns.includes('file_type')) {
+        updates.push('file_type = ?');
+        params.push(fileType);
+      }
     }
 
     if (updates.length > 0) {
@@ -401,7 +474,10 @@ router.delete('/:id', authenticateToken, requireRole('Admin', 'Staff', 'Instruct
     }
     const certificateId = req.params.id;
 
-    const certificate = await db.get('SELECT file_path FROM certificates WHERE id = ?', [certificateId]);
+    const certificate = await db.get(
+      'SELECT COALESCE(file_path, pdf_path) as file_path FROM certificates WHERE id = ?',
+      [certificateId]
+    );
     if (!certificate) {
       return res.status(404).json({ error: 'Certificate not found' });
     }
@@ -489,8 +565,8 @@ router.post('/verify', async (req, res) => {
         issue_date: certificate.issue_date,
         completion_date: certificate.completion_date,
         grade: certificate.grade,
-        file_path: certificate.file_path,
-        file_type: certificate.file_type,
+        file_path: certificate.file_path || certificate.pdf_path || null,
+        file_type: certificate.file_type || (String(certificate.file_path || certificate.pdf_path || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'),
         verification_code: certificate.verification_code
       })),
       access_window: {
@@ -516,7 +592,7 @@ router.get('/:id/download/:format', authenticateToken, async (req, res) => {
     }
 
     const certificate = await db.get(
-      `SELECT c.*, s.student_id as student_code
+      `SELECT c.*, s.student_id as student_code, COALESCE(c.file_path, c.pdf_path) as resolved_file_path
        FROM certificates c
        JOIN students s ON c.student_id = s.id
        WHERE c.id = ? OR c.certificate_id = ?`,
@@ -535,11 +611,11 @@ router.get('/:id/download/:format', authenticateToken, async (req, res) => {
       }
     }
 
-    if (!certificate.file_path) {
+    if (!certificate.resolved_file_path) {
       return res.status(404).json({ error: 'Certificate file not found' });
     }
 
-    const filePath = path.join(__dirname, '../../', certificate.file_path);
+    const filePath = path.join(__dirname, '../../', certificate.resolved_file_path);
 
     if (!fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'Certificate file not found on server' });
@@ -580,7 +656,7 @@ router.get('/public/:id/download/:format', async (req, res) => {
     }
 
     const certificate = await db.get(
-      `SELECT c.file_path, c.certificate_id, c.file_type,
+      `SELECT COALESCE(c.file_path, c.pdf_path) as file_path, c.certificate_id, c.file_type,
               ch.cert_access_enabled, ch.cert_access_start, ch.cert_access_end
        FROM certificates c
        JOIN students s ON s.id = c.student_id

@@ -34,6 +34,7 @@ const CertificateForm = ({ certificate, onClose }) => {
         name: certificate.student_name,
         student_id: certificate.student_code
       });
+      setSearchQuery(certificate.student_name || '');
     }
   }, [certificate]);
 
@@ -120,7 +121,19 @@ const CertificateForm = ({ certificate, onClose }) => {
       return;
     }
 
-    if (!formData.student_id || !formData.course_id) {
+    let resolvedStudentId = formData.student_id;
+    if (!resolvedStudentId && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase();
+      const exact = students.find((s) =>
+        String(s.name || '').trim().toLowerCase() === q ||
+        String(s.student_id || '').trim().toLowerCase() === q
+      );
+      if (exact) {
+        resolvedStudentId = exact.id;
+      }
+    }
+
+    if (!resolvedStudentId || !formData.course_id) {
       setError('Please select a student and course');
       setLoading(false);
       return;
@@ -128,7 +141,7 @@ const CertificateForm = ({ certificate, onClose }) => {
 
     try {
       const formDataObj = new FormData();
-      formDataObj.append('student_id', formData.student_id);
+      formDataObj.append('student_id', resolvedStudentId);
       formDataObj.append('course_id', formData.course_id);
       if (formData.grade) formDataObj.append('grade', formData.grade);
       if (formData.issue_date) formDataObj.append('issue_date', formData.issue_date);
@@ -178,7 +191,11 @@ const CertificateForm = ({ certificate, onClose }) => {
                     className="form-control"
                     placeholder="Search student by name or ID..."
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value);
+                      setSelectedStudent(null);
+                      setFormData((prev) => ({ ...prev, student_id: '' }));
+                    }}
                     required
                   />
                   {selectedStudent && (
@@ -279,7 +296,7 @@ const CertificateForm = ({ certificate, onClose }) => {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={loading || !formData.student_id || !formData.course_id || (!certificate && !file)}>
+              <button type="submit" className="btn btn-primary" disabled={loading || !formData.course_id || (!certificate && !file)}>
                 {loading ? 'Saving...' : certificate ? 'Update' : 'Create'}
               </button>
             </div>
