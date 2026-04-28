@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../config/api';
 import { Link } from 'react-router-dom';
+import { saveCertificateAxiosBlob } from '../../utils/certificateDownload';
 
 const StudentCertificates = () => {
   const [certificates, setCertificates] = useState([]);
@@ -29,16 +30,14 @@ const StudentCertificates = () => {
       return;
     }
     try {
-      const res = await api.get(cert.download_url, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `certificate-${cert.certificate_id}.pdf`;
-      a.click();
-      window.URL.revokeObjectURL(url);
+      const response = await api.get(cert.download_url, {
+        responseType: 'blob',
+        validateStatus: () => true
+      });
+      await saveCertificateAxiosBlob(response, `certificate-${cert.certificate_id}`);
     } catch (err) {
       console.error('Download failed', err);
-      alert(err.response?.data?.error || 'Download failed.');
+      alert(err.message || err.response?.data?.error || 'Download failed.');
     }
   };
 

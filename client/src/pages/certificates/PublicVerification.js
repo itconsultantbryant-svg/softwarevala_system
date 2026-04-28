@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import api from '../../config/api';
 import { getApiBaseUrl, normalizeUrl } from '../../utils/apiUrl';
+import { saveCertificateAxiosBlob } from '../../utils/certificateDownload';
 
 const PublicVerification = () => {
   const [formData, setFormData] = useState({
@@ -54,28 +55,14 @@ const PublicVerification = () => {
 
   const handleDownload = async (certId, certCode, format) => {
     try {
-      // Use centralized API config for consistent error handling
-      const downloadUrl = `/certificates/public/${certId}/download/${format}`;
-      const response = await api.get(downloadUrl, {
+      const response = await api.get(`/certificates/public/${certId}/download/${format}`, {
         responseType: 'blob',
-        headers: {
-          'Accept': `image/${format}`
-        }
+        validateStatus: () => true
       });
-      
-      // response.data is already a Blob when responseType is 'blob'
-      const blob = response.data;
-      const blobUrl = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = blobUrl;
-      link.setAttribute('download', `certificate-${certCode}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(blobUrl);
+      await saveCertificateAxiosBlob(response, `certificate-${certCode}`);
     } catch (error) {
       console.error('Download error:', error);
-      alert('Failed to download certificate. Please try again.');
+      alert(error.message || 'Failed to download certificate. Please try again.');
     }
   };
 

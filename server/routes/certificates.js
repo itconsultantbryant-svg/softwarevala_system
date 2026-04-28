@@ -166,9 +166,67 @@ function normalizeCertificateRow(certificate) {
     : (String(resolvedFilePath || '').toLowerCase().endsWith('.png') ? 'png' : (resolvedFilePath ? 'jpeg' : null));
   return {
     ...certificate,
+    student_image: normalizeProfileImage(certificate.student_image),
     file_path: resolvedFilePath,
     file_type: certificate.file_type || inferredType
   };
+}
+
+/** Resolve persisted path (legacy web, absolute disk, pdf_path only, etc.) to an existing file path. */
+function resolveCertificateAbsoluteDiskPath(record) {
+  const raw = record.resolved_file_path || record.file_path || record.pdf_path || null;
+  if (!raw) return null;
+
+  if (/^https?:\/\//i.test(String(raw).trim())) {
+    return null;
+  }
+
+  const webish = toPublicCertificatePath(raw);
+  const candidates = [];
+
+  if (webish && !/^https?:\/\//i.test(webish.trim())) {
+    candidates.push(resolveUploadsDiskPath(webish));
+  }
+  candidates.push(resolveUploadsDiskPath(raw));
+
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const key = candidate || '';
+    if (!candidate || seen.has(key)) continue;
+    seen.add(key);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Serve the certificate file exactly as stored: correct MIME and filename extension (no bogus PDF headers).
+ */
+function sendCertificateFileResponse(res, absDiskPath, friendlyCertificateId) {
+  if (!absDiskPath || !fs.existsSync(absDiskPath)) {
+    res.status(404).json({ error: 'Certificate file not found on server' });
+    return;
+  }
+
+  const extLower = path.extname(absDiskPath).toLowerCase();
+  const mime =
+    extLower === '.pdf'
+      ? 'application/pdf'
+      : extLower === '.png'
+        ? 'image/png'
+        : extLower === '.jpg' || extLower === '.jpeg'
+          ? 'image/jpeg'
+          : 'application/octet-stream';
+
+  const safeSlug = String(friendlyCertificateId || 'CERT').replace(/[^\w.-]/g, '_').slice(0, 200);
+  const filename = extLower ? `certificate-${safeSlug}${extLower}` : `certificate-${safeSlug}`;
+
+  const absolute = path.resolve(absDiskPath);
+  res.setHeader('Content-Type', mime);
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+  /* format param is informational only — always send truthful bytes+MIME until server-side conversion exists */
+  res.sendFile(absolute);
 }
 
 async function getCertificateColumnNames() {
@@ -690,34 +748,12 @@ router.get('/:id/download/:format', authenticateToken, async (req, res) => {
       }
     }
 
-    if (!certificate.resolved_file_path) {
-      return res.status(404).json({ error: 'Certificate file not found' });
-    }
-
-    const filePath = resolveUploadsDiskPath(certificate.resolved_file_path);
-
-    if (!filePath || !fs.existsSync(filePath)) {
+    const absDiskPath = resolveCertificateAbsoluteDiskPath(certificate);
+    if (!absDiskPath) {
       return res.status(404).json({ error: 'Certificate file not found on server' });
     }
 
-    // If requesting original format, serve the file as-is
-    if (format === 'original' || format === certificate.file_type) {
-      const ext = path.extname(filePath);
-      const contentType = ext === '.pdf' ? 'application/pdf' : ext === '.png' ? 'image/png' : 'image/jpeg';
-      
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `attachment; filename="certificate-${certificate.certificate_id}${ext}"`);
-      return res.sendFile(path.resolve(filePath));
-    }
-
-    // For format conversion, we would need image processing libraries
-    // For now, return the original file with appropriate headers
-    const ext = path.extname(filePath);
-    const contentType = format === 'pdf' ? 'application/pdf' : format === 'png' ? 'image/png' : 'image/jpeg';
-    
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="certificate-${certificate.certificate_id}.${format}"`);
-    res.sendFile(path.resolve(filePath));
+    sendCertificateFileResponse(res, absDiskPath, certificate.certificate_id);
   } catch (error) {
     console.error('Download certificate error:', error);
     res.status(500).json({ error: 'Failed to download certificate' });
@@ -752,23 +788,12 @@ router.get('/public/:id/download/:format', async (req, res) => {
       return res.status(403).json({ error: 'Certificate access window is closed for this cohort' });
     }
 
-    if (!certificate.file_path) {
-      return res.status(404).json({ error: 'Certificate file not found' });
+    const absDiskPath = resolveCertificateAbsoluteDiskPath(certificate);
+    if (!absDiskPath) {
+      return res.status(404).json({ error: 'Certificate file not found on server' });
     }
 
-    const filePath = resolveUploadsDiskPath(certificate.file_path);
-
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Certificate file not found' });
-    }
-
-    const ext = path.extname(filePath);
-    const contentType = format === 'pdf' || ext === '.pdf' ? 'application/pdf' : 
-                       format === 'png' || ext === '.png' ? 'image/png' : 'image/jpeg';
-    
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="certificate-${certificate.certificate_id}.${format}"`);
-    res.sendFile(path.resolve(filePath));
+    sendCertificateFileResponse(res, absDiskPath, certificate.certificate_id);
   } catch (error) {
     console.error('Public download certificate error:', error);
     res.status(500).json({ error: 'Failed to download certificate' });

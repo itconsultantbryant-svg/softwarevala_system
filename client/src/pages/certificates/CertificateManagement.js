@@ -3,6 +3,7 @@ import api from '../../config/api';
 import CertificateForm from './CertificateForm';
 import CertificateView from './CertificateView';
 import { useAuth } from '../../hooks/useAuth';
+import { saveCertificateAxiosBlob } from '../../utils/certificateDownload';
 
 const CertificateManagement = ({ embedded = false }) => {
   const { user } = useAuth();
@@ -108,19 +109,13 @@ const CertificateManagement = ({ embedded = false }) => {
   const handleDownload = async (certificate, format) => {
     try {
       const response = await api.get(`/certificates/${certificate.id}/download/${format}`, {
-        responseType: 'blob'
+        responseType: 'blob',
+        validateStatus: () => true
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `certificate-${certificate.certificate_id}.${format}`);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      await saveCertificateAxiosBlob(response, `certificate-${certificate.certificate_id}`);
     } catch (error) {
       console.error('Download error:', error);
-      alert('Failed to download certificate');
+      alert(error.message || 'Failed to download certificate');
     }
   };
 
