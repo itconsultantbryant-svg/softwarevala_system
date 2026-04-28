@@ -67,7 +67,7 @@ const CertificateView = ({ certificate, onClose }) => {
                   <div className="card-body text-center">
                     {certificate.student_image ? (
                       <img
-                        src={certificate.student_image}
+                        src={normalizeUrl(certificate.student_image)}
                         alt={certificate.student_name}
                         className="img-fluid rounded-circle mb-3"
                         style={{ width: '150px', height: '150px', objectFit: 'cover' }}

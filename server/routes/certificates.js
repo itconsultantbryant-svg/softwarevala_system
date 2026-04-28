@@ -130,6 +130,19 @@ function isCertificateWindowOpenForCohort(row) {
   return true;
 }
 
+function normalizeCertificateRow(certificate) {
+  if (!certificate) return certificate;
+  const resolvedFilePath = certificate.file_path || certificate.pdf_path || null;
+  const inferredType = String(resolvedFilePath || '').toLowerCase().endsWith('.pdf')
+    ? 'pdf'
+    : (String(resolvedFilePath || '').toLowerCase().endsWith('.png') ? 'png' : (resolvedFilePath ? 'jpeg' : null));
+  return {
+    ...certificate,
+    file_path: resolvedFilePath,
+    file_type: certificate.file_type || inferredType
+  };
+}
+
 async function getCertificateColumnNames() {
   try {
     const pragma = await db.all("PRAGMA table_info(certificates)");
@@ -219,7 +232,7 @@ router.get('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', '
     query += ' ORDER BY c.created_at DESC';
 
     const certificates = await db.all(query, params);
-    res.json({ certificates });
+    res.json({ certificates: certificates.map(normalizeCertificateRow) });
   } catch (error) {
     console.error('Get certificates error:', error);
     res.status(500).json({ error: 'Failed to fetch certificates' });
@@ -253,7 +266,7 @@ router.get('/search/:query', authenticateToken, requireRole('Admin', 'Staff', 'I
       [`%${query}%`, `%${query}%`, `%${query}%`]
     );
 
-    res.json({ certificates });
+    res.json({ certificates: certificates.map(normalizeCertificateRow) });
   } catch (error) {
     console.error('Search certificates error:', error);
     res.status(500).json({ error: 'Failed to search certificates' });
@@ -297,7 +310,7 @@ router.get('/:id', authenticateToken, async (req, res) => {
       }
     }
 
-    res.json({ certificate });
+    res.json({ certificate: normalizeCertificateRow(certificate) });
   } catch (error) {
     console.error('Get certificate error:', error);
     res.status(500).json({ error: 'Failed to fetch certificate' });
