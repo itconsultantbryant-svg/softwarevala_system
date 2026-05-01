@@ -238,9 +238,51 @@ router.post('/', authenticateToken, requireStaffManagement, [
     }
 
     const {
-      email, name, username, phone, profile_image, password
+      email, name, username, phone, profile_image, password,
+      employment_type = 'Full-time',
+      position,
+      department,
+      employment_date,
+      base_salary,
+      bonus_structure,
+      emergency_contact_name,
+      emergency_contact_phone,
+      address,
+      date_of_birth,
+      place_of_birth,
+      nationality,
+      gender,
+      marital_status,
+      national_id,
+      tax_id,
+      bank_name,
+      bank_account_number,
+      bank_branch,
+      next_of_kin_name,
+      next_of_kin_relationship,
+      next_of_kin_phone,
+      next_of_kin_address,
+      qualifications,
+      previous_employment,
+      notes
     } = req.body;
+    const referencesField = req.body.references;
+
     const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
+
+    const toJsonColumn = (v) => {
+      if (v === undefined || v === null || v === '') return null;
+      return typeof v === 'string' ? v : JSON.stringify(v);
+    };
+    const qualificationsData = toJsonColumn(qualifications);
+    const previousEmploymentData = toJsonColumn(previous_employment);
+    const referencesData = toJsonColumn(referencesField);
+    const baseSalaryValue =
+      base_salary === undefined || base_salary === null || base_salary === ''
+        ? null
+        : Number.isNaN(Number(base_salary))
+          ? base_salary
+          : Number(base_salary);
 
     // Check if user exists
     const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
@@ -264,6 +306,31 @@ router.post('/', authenticateToken, requireStaffManagement, [
     // Generate staff ID
     const staffId = generateStaffId();
 
+    const USE_POSTGRESQL_CREATE = !!process.env.DATABASE_URL;
+    let staffColumnNames = [];
+    if (USE_POSTGRESQL_CREATE) {
+      const info = await db.all(
+        "SELECT column_name as name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'staff'"
+      );
+      staffColumnNames = info.map((col) => col.name);
+    } else {
+      const info = await db.all('PRAGMA table_info(staff)');
+      staffColumnNames = info.map((col) => col.name);
+    }
+
+    const enhancedOnlyColumns = [
+      'date_of_birth', 'place_of_birth', 'nationality', 'gender', 'marital_status',
+      'national_id', 'tax_id', 'bank_name', 'bank_account_number', 'bank_branch',
+      'next_of_kin_name', 'next_of_kin_relationship', 'next_of_kin_phone',
+      'next_of_kin_address', 'qualifications', 'previous_employment', 'notes'
+    ];
+    const hasEnhancedFields = enhancedOnlyColumns.every((col) => staffColumnNames.includes(col));
+
+    const hasReferencesColumn = USE_POSTGRESQL_CREATE
+      ? staffColumnNames.includes('references')
+      : staffColumnNames.includes('[references]') || staffColumnNames.includes('references');
+    const referencesColumnSql = USE_POSTGRESQL_CREATE ? '"references"' : '[references]';
+
     // Create staff record - use appropriate columns based on what exists
     let staffResult;
     try {
@@ -276,12 +343,12 @@ router.post('/', authenticateToken, requireStaffManagement, [
           'bank_name', 'bank_account_number', 'bank_branch', 'next_of_kin_name', 'next_of_kin_relationship',
           'next_of_kin_phone', 'next_of_kin_address', 'qualifications', 'previous_employment'
         ];
-        
+
         if (hasReferencesColumn) {
-          columns.push(referencesColumnName);
+          columns.push(referencesColumnSql);
         }
         columns.push('notes');
-        
+
         const placeholders = columns.map(() => '?').join(', ');
         const columnList = columns.join(', ');
         
@@ -298,6 +365,10 @@ router.post('/', authenticateToken, requireStaffManagement, [
           next_of_kin_phone || null, next_of_kin_address || null,
           qualificationsData, previousEmploymentData
         ];
+        if (hasReferencesColumn) {
+          params.push(referencesData);
+        }
+        params.push(notes || null);
         
         console.log(`Inserting staff with ${columns.length} columns and ${params.length} parameters`);
         console.log('Columns:', columns);
