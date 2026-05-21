@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { format } from 'date-fns';
@@ -8,6 +8,7 @@ import { getSocket } from '../../config/socket';
 const TAB_STUDENTS = 'students';
 const TAB_PENDING = 'pending';
 const TAB_TRANSACTIONS = 'transactions';
+const SEARCH_DEBOUNCE_MS = 300;
 
 const StudentPaymentManagement = () => {
   const { user } = useAuth();
@@ -21,9 +22,20 @@ const StudentPaymentManagement = () => {
   const [actionId, setActionId] = useState(null);
   const [actionMode, setActionMode] = useState(null);
   const [adminNotes, setAdminNotes] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [listLoading, setListLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [transactionLoading, setTransactionLoading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [filterOptions, setFilterOptions] = useState({ cohorts: [], courses: [] });
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cohortFilter, setCohortFilter] = useState('');
+  const [courseFilter, setCourseFilter] = useState('');
+  const [sortBy, setSortBy] = useState('name');
+  const [sortDir, setSortDir] = useState('asc');
+  const [studentTotal, setStudentTotal] = useState(0);
+  const searchDebounceRef = useRef(null);
+  const studentsAbortRef = useRef(null);
+  const detailAbortRef = useRef(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPaymentForm, setShowPaymentForm] = useState(false);
@@ -62,6 +74,18 @@ const StudentPaymentManagement = () => {
     notes: ''
   });
 
+  const applyPaymentSummaryToList = useCallback((studentId, paymentSummary) => {
+    if (!paymentSummary || !studentId) return;
+    setStudents((prev) =>
+      prev.map((s) =>
+        s.id === studentId ? { ...s, paymentSummary } : s
+      )
+    );
+    setSelectedStudent((prev) =>
+      prev?.id === studentId ? { ...prev, paymentSummary } : prev
+    );
+  }, []);
+
   const fetchPending = useCallback(async () => {
     setPendingLoading(true);
     try {
@@ -74,9 +98,88 @@ const StudentPaymentManagement = () => {
     }
   }, []);
 
+  const fetchFilterOptions = useCallback(async () => {
+    try {
+      const res = await api.get('/student-payments/filters');
+      setFilterOptions({
+        cohorts: res.data.cohorts || [],
+        courses: res.data.courses || []
+      });
+    } catch (err) {
+      console.error('Fetch filter options error:', err);
+    }
+  }, []);
+
+  const fetchStudents = useCallback(async (opts = {}) => {
+    const silent = opts.silent === true;
+    if (studentsAbortRef.current) {
+      studentsAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    studentsAbortRef.current = controller;
+
+    if (!silent) setListLoading(true);
+    try {
+      const params = {};
+      if (searchQuery.trim()) params.search = searchQuery.trim();
+      if (cohortFilter) params.cohort_id = cohortFilter;
+      if (courseFilter) params.course_id = courseFilter;
+      if (sortBy) params.sort = sortBy;
+      if (sortDir) params.sort_dir = sortDir;
+
+      const response = await api.get('/student-payments/students', {
+        params,
+        signal: controller.signal
+      });
+      const list = response.data.students || [];
+      setStudents(list);
+      setStudentTotal(response.data.total ?? list.length);
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+      console.error('Error fetching students:', err);
+      setError('Failed to fetch students: ' + (err.response?.data?.error || err.message));
+    } finally {
+      if (!controller.signal.aborted) setListLoading(false);
+    }
+  }, [searchQuery, cohortFilter, courseFilter, sortBy, sortDir]);
+
+  const refreshStudentDetail = useCallback(async (studentId, { silent = false } = {}) => {
+    if (!studentId) return;
+    if (detailAbortRef.current) detailAbortRef.current.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
+    if (!silent) setDetailLoading(true);
+    try {
+      const res = await api.get(`/student-payments/student/${studentId}/detail`, {
+        signal: controller.signal
+      });
+      setPayments(res.data.payments || []);
+      setEnrolledCourses(res.data.courses || []);
+      setTransactions(res.data.transactions || []);
+      if (res.data.summary) {
+        applyPaymentSummaryToList(studentId, {
+          totalFees: res.data.summary.totalFees,
+          totalPaid: res.data.summary.totalPaid,
+          totalBalance: res.data.summary.totalBalance,
+          paymentCount: (res.data.payments || []).length
+        });
+      }
+    } catch (err) {
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+      setError(err.response?.data?.error || 'Failed to load student details');
+    } finally {
+      if (!controller.signal.aborted) setDetailLoading(false);
+    }
+  }, [applyPaymentSummaryToList]);
+
+  useEffect(() => {
+    fetchFilterOptions();
+  }, [fetchFilterOptions]);
+
   useEffect(() => {
     fetchStudents();
-  }, []);
+  }, [fetchStudents]);
 
   useEffect(() => {
     if (activeTab === TAB_PENDING) fetchPending();
@@ -87,84 +190,44 @@ const StudentPaymentManagement = () => {
     if (!socket) return;
     const onNotification = (n) => {
       const link = n && typeof n === 'object' && n.link ? n.link : null;
-      if (link && String(link).includes('student-payments')) fetchPending();
+      if (link && String(link).includes('student-payments')) {
+        fetchPending();
+        if (selectedStudent?.id) refreshStudentDetail(selectedStudent.id, { silent: true });
+      }
     };
     socket.on('notification', onNotification);
     return () => socket.off('notification', onNotification);
-  }, [fetchPending]);
+  }, [fetchPending, refreshStudentDetail, selectedStudent?.id]);
 
   useEffect(() => {
-    if (!selectedStudent) return;
-    const studentId = selectedStudent.id;
-    let cancelled = false;
-    setDetailLoading(true);
-    setTransactionLoading(true);
-    setError('');
-    Promise.all([
-      api.get(`/student-payments/student/${studentId}`),
-      api.get(`/student-payments/student/${studentId}/enrolled-courses`).catch(() => ({ data: { courses: [] } })),
-      api.get(`/student-payments/student/${studentId}/transactions`).catch(() => ({ data: { transactions: [] } }))
-    ]).then(([payRes, coursesRes, txRes]) => {
-      if (cancelled) return;
-      setPayments(payRes.data.payments || []);
-      setEnrolledCourses(coursesRes.data?.courses || []);
-      setTransactions(txRes.data?.transactions || []);
-    }).catch((err) => {
-      if (!cancelled) {
-        setError(err.response?.data?.error || 'Failed to load student details');
-        setPayments([]);
-        setEnrolledCourses([]);
-        setTransactions([]);
-      }
-    }).finally(() => {
-      if (!cancelled) {
-        setDetailLoading(false);
-        setTransactionLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [selectedStudent?.id]);
+    if (!selectedStudent?.id) return;
+    refreshStudentDetail(selectedStudent.id);
+    return () => {
+      if (detailAbortRef.current) detailAbortRef.current.abort();
+    };
+  }, [selectedStudent?.id, refreshStudentDetail]);
 
-  const handleTransactionsTab = async () => {
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    searchDebounceRef.current = setTimeout(() => {
+      setSearchQuery(searchInput);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchInput]);
+
+  const handleTransactionsTab = () => {
     setActiveTab(TAB_TRANSACTIONS);
   };
 
-  const fetchStudents = async () => {
-    try {
-      setLoading(true);
-      const response = await api.get('/student-payments/students');
-      setStudents(response.data.students);
-    } catch (err) {
-      console.error('Error fetching students:', err);
-      setError('Failed to fetch students: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchStudentPayments = async (studentId) => {
-    try {
-      const response = await api.get(`/student-payments/student/${studentId}`);
-      setPayments(response.data.payments || []);
-      // Keep selectedStudent from state; do not overwrite (avoids blink)
-    } catch (err) {
-      console.error('Error fetching student payments:', err);
-      setError('Failed to fetch student payments: ' + (err.response?.data?.error || err.message));
-    }
-  };
-
-  const fetchEnrolledCourses = async (studentId) => {
-    try {
-      console.log('Fetching enrolled courses for student:', studentId);
-      const response = await api.get(`/student-payments/student/${studentId}/enrolled-courses`);
-      console.log('Enrolled courses response:', response.data);
-      setEnrolledCourses(response.data.courses || []);
-    } catch (err) {
-      console.error('Error fetching enrolled courses:', err);
-      console.error('Error details:', err.response?.data);
-      // Don't show error if endpoint doesn't exist yet, just set empty array
-      setEnrolledCourses([]);
-    }
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearchQuery('');
+    setCohortFilter('');
+    setCourseFilter('');
+    setSortBy('name');
+    setSortDir('asc');
   };
 
   const handleStudentSelect = (student) => {
@@ -202,8 +265,9 @@ const StudentPaymentManagement = () => {
       return;
     }
 
+    setProcessing(true);
     try {
-      await api.post('/student-payments/add-payment', paymentFormData);
+      const res = await api.post('/student-payments/add-payment', paymentFormData);
       setSuccess('Payment added successfully');
       setShowPaymentForm(false);
       setPaymentFormData({
@@ -215,12 +279,15 @@ const StudentPaymentManagement = () => {
         payment_reference: '',
         notes: ''
       });
-      fetchStudentPayments(selectedStudent.id);
-      fetchEnrolledCourses(selectedStudent.id);
-      fetchStudents(); // Refresh student list to update totals
+      if (res.data.paymentSummary) {
+        applyPaymentSummaryToList(selectedStudent.id, res.data.paymentSummary);
+      }
+      await refreshStudentDetail(selectedStudent.id, { silent: true });
     } catch (err) {
       console.error('Error adding payment:', err);
       setError('Failed to add payment: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -260,9 +327,11 @@ const StudentPaymentManagement = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setProcessing(true);
     try {
+      let res;
       if (transactionFormMode === 'create') {
-        await api.post('/student-payments/transactions', {
+        res = await api.post('/student-payments/transactions', {
           student_id: transactionFormData.student_id,
           course_id: transactionFormData.course_id,
           amount: transactionFormData.amount,
@@ -274,7 +343,7 @@ const StudentPaymentManagement = () => {
         });
         setSuccess('Transaction created successfully');
       } else {
-        await api.put(`/student-payments/transactions/${transactionFormData.id}`, {
+        res = await api.put(`/student-payments/transactions/${transactionFormData.id}`, {
           amount: transactionFormData.amount,
           payment_date: transactionFormData.payment_date,
           payment_method: transactionFormData.payment_method,
@@ -285,17 +354,17 @@ const StudentPaymentManagement = () => {
         setSuccess('Transaction updated successfully');
       }
       setShowTransactionForm(false);
-      if (selectedStudent) {
-        fetchStudentPayments(selectedStudent.id);
-        fetchEnrolledCourses(selectedStudent.id);
-        const txRes = await api.get(`/student-payments/student/${selectedStudent.id}/transactions`);
-        setTransactions(txRes.data?.transactions || []);
+      const sid = selectedStudent?.id || transactionFormData.student_id;
+      if (res?.data?.paymentSummary && sid) {
+        applyPaymentSummaryToList(sid, res.data.paymentSummary);
       }
-      fetchStudents();
+      if (sid) await refreshStudentDetail(sid, { silent: true });
       fetchPending();
     } catch (err) {
       console.error('Transaction submit error:', err);
       setError(err.response?.data?.error || 'Failed to save transaction');
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -317,8 +386,9 @@ const StudentPaymentManagement = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    setProcessing(true);
     try {
-      await api.put(`/student-payments/${editPaymentData.id}`, {
+      const res = await api.put(`/student-payments/${editPaymentData.id}`, {
         course_fee: editPaymentData.course_fee,
         amount_paid: editPaymentData.amount_paid,
         balance: editPaymentData.balance,
@@ -330,44 +400,65 @@ const StudentPaymentManagement = () => {
       setSuccess('Payment updated successfully');
       setShowEditPaymentForm(false);
       if (selectedStudent) {
-        fetchStudentPayments(selectedStudent.id);
-        fetchStudents();
+        if (res.data.paymentSummary) {
+          applyPaymentSummaryToList(selectedStudent.id, res.data.paymentSummary);
+        }
+        await refreshStudentDetail(selectedStudent.id, { silent: true });
       }
     } catch (err) {
       console.error('Update payment error:', err);
       setError(err.response?.data?.error || 'Failed to update payment');
+    } finally {
+      setProcessing(false);
     }
   };
 
   const handleApprove = async (id) => {
     setError('');
     setSuccess('');
+    setProcessing(true);
+    const pendingRow = pending.find((p) => p.id === id);
+    const studentId = pendingRow?.student_id || selectedStudent?.id;
     try {
-      await api.put(`/student-payments/transactions/${id}/approve`, { admin_notes: adminNotes || undefined });
+      const res = await api.put(`/student-payments/transactions/${id}/approve`, { admin_notes: adminNotes || undefined });
       setSuccess('Payment approved.');
       setActionId(null);
       setAdminNotes('');
-      fetchPending();
-      fetchStudents();
-      if (selectedStudent) fetchStudentPayments(selectedStudent.id);
+      setPending((prev) => prev.filter((p) => p.id !== id));
+      if (res.data.paymentSummary && studentId) {
+        applyPaymentSummaryToList(studentId, res.data.paymentSummary);
+      }
+      if (studentId && selectedStudent?.id === studentId) {
+        await refreshStudentDetail(studentId, { silent: true });
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to approve');
+      fetchPending();
+    } finally {
+      setProcessing(false);
     }
   };
 
   const handleReject = async (id) => {
     setError('');
     setSuccess('');
+    setProcessing(true);
+    const pendingRow = pending.find((p) => p.id === id);
+    const studentId = pendingRow?.student_id || selectedStudent?.id;
     try {
       await api.put(`/student-payments/transactions/${id}/reject`, { admin_notes: adminNotes || undefined });
       setSuccess('Payment rejected.');
       setActionId(null);
       setAdminNotes('');
-      fetchPending();
-      fetchStudents();
-      if (selectedStudent) fetchStudentPayments(selectedStudent.id);
+      setPending((prev) => prev.filter((p) => p.id !== id));
+      if (studentId && selectedStudent?.id === studentId) {
+        await refreshStudentDetail(studentId, { silent: true });
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to reject');
+      fetchPending();
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -478,16 +569,6 @@ const StudentPaymentManagement = () => {
 
     exportToExcel('Student Payments', headers, data, 'student_payments.xlsx');
   };
-
-  if (loading) {
-    return (
-      <div className="d-flex justify-content-center align-items-center" style={{ height: '70vh' }}>
-        <div className="spinner-border text-primary" role="status">
-          <span className="visually-hidden">Loading...</span>
-        </div>
-      </div>
-    );
-  }
 
   const openApprove = (id) => { setActionId(id); setActionMode('approve'); setAdminNotes(''); };
   const openReject = (id) => { setActionId(id); setActionMode('reject'); setAdminNotes(''); };
@@ -614,9 +695,15 @@ const StudentPaymentManagement = () => {
                   <div className="modal-footer">
                     <button type="button" className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                     {actionMode === 'approve' ? (
-                      <button type="button" className="btn btn-success" onClick={() => handleApprove(actionId)}>Approve</button>
+                      <button type="button" className="btn btn-success" onClick={() => handleApprove(actionId)} disabled={processing}>
+                        {processing ? <span className="spinner-border spinner-border-sm me-1" /> : null}
+                        Approve
+                      </button>
                     ) : (
-                      <button type="button" className="btn btn-danger" onClick={() => handleReject(actionId)}>Reject</button>
+                      <button type="button" className="btn btn-danger" onClick={() => handleReject(actionId)} disabled={processing}>
+                        {processing ? <span className="spinner-border spinner-border-sm me-1" /> : null}
+                        Reject
+                      </button>
                     )}
                   </div>
                 </div>
@@ -630,19 +717,111 @@ const StudentPaymentManagement = () => {
         <div className="col-md-4">
           <div className="card">
             <div className="card-header">
-              <h5 className="mb-0">Students</h5>
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h5 className="mb-0">Students</h5>
+                <small className="text-muted">{studentTotal} found</small>
+              </div>
+              <div className="mb-2">
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text"><i className="bi bi-search" /></span>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Search name, ID, email, course..."
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                  />
+                  {searchInput && (
+                    <button type="button" className="btn btn-outline-secondary" onClick={() => { setSearchInput(''); setSearchQuery(''); }} aria-label="Clear search">
+                      <i className="bi bi-x" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="row g-2 mb-2">
+                <div className="col-6">
+                  <select
+                    className="form-select form-select-sm"
+                    value={cohortFilter}
+                    onChange={(e) => setCohortFilter(e.target.value)}
+                  >
+                    <option value="">All cohorts</option>
+                    {filterOptions.cohorts.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}{c.code ? ` (${c.code})` : ''}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="col-6">
+                  <select
+                    className="form-select form-select-sm"
+                    value={courseFilter}
+                    onChange={(e) => setCourseFilter(e.target.value)}
+                  >
+                    <option value="">All courses</option>
+                    {filterOptions.courses.map((c) => (
+                      <option key={c.id} value={c.id}>{c.course_code} - {c.title}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="row g-2">
+                <div className="col-7">
+                  <select
+                    className="form-select form-select-sm"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                  >
+                    <option value="name">Sort: Name</option>
+                    <option value="student_id">Sort: Student ID</option>
+                    <option value="balance">Sort: Balance</option>
+                    <option value="fees">Sort: Total Fees</option>
+                    <option value="paid">Sort: Amount Paid</option>
+                    <option value="cohort">Sort: Cohort</option>
+                    <option value="created">Sort: Date Added</option>
+                  </select>
+                </div>
+                <div className="col-5 d-flex gap-1">
+                  <button
+                    type="button"
+                    className={`btn btn-sm flex-grow-1 ${sortDir === 'asc' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => setSortDir('asc')}
+                    title="Ascending"
+                  >
+                    <i className="bi bi-sort-alpha-down" />
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn btn-sm flex-grow-1 ${sortDir === 'desc' ? 'btn-primary' : 'btn-outline-primary'}`}
+                    onClick={() => setSortDir('desc')}
+                    title="Descending"
+                  >
+                    <i className="bi bi-sort-alpha-up" />
+                  </button>
+                  {(searchInput || cohortFilter || courseFilter || sortBy !== 'name' || sortDir !== 'asc') && (
+                    <button type="button" className="btn btn-sm btn-outline-secondary" onClick={clearFilters} title="Clear filters">
+                      <i className="bi bi-funnel" />
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="card-body" style={{ maxHeight: '600px', overflowY: 'auto' }}>
-              {students.length === 0 ? (
+            <div className="card-body position-relative" style={{ maxHeight: '520px', overflowY: 'auto', minHeight: '120px' }}>
+              {listLoading && (
+                <div className="position-absolute top-0 start-0 end-0 d-flex justify-content-center py-2" style={{ zIndex: 2, background: 'rgba(255,255,255,0.85)' }}>
+                  <div className="spinner-border spinner-border-sm text-primary" role="status" />
+                </div>
+              )}
+              {!listLoading && students.length === 0 ? (
                 <div className="text-center p-4 text-muted">
                   <i className="bi bi-person-x fs-1 d-block mb-2"></i>
-                  No students found.
+                  No students match your filters.
                 </div>
               ) : (
                 <div className="list-group">
                   {students.map(student => (
                     <button
                       key={student.id}
+                      type="button"
                       className={`list-group-item list-group-item-action ${selectedStudent?.id === student.id ? 'active' : ''}`}
                       onClick={() => handleStudentSelect(student)}
                     >
@@ -650,7 +829,12 @@ const StudentPaymentManagement = () => {
                         <h6 className="mb-1">{student.name}</h6>
                         <small>{student.student_id}</small>
                       </div>
-                      <p className="mb-1 text-muted">{student.email}</p>
+                      <p className="mb-1 text-muted small">{student.email}</p>
+                      {student.cohort_name && (
+                        <small className="d-block text-muted mb-1">
+                          <i className="bi bi-people me-1" />{student.cohort_name}
+                        </small>
+                      )}
                       <div className="d-flex justify-content-between">
                         <small>Total Fees: ${student.paymentSummary?.totalFees?.toFixed(2) || '0.00'}</small>
                         <small className={student.paymentSummary?.totalBalance > 0 ? 'text-danger' : 'text-success'}>
@@ -710,7 +894,7 @@ const StudentPaymentManagement = () => {
                 ) : (
                 <>
                 <div className="row mb-3">
-                  <div className="col-md-3">
+                  <div className="col-md-2">
                     <strong>Student ID:</strong><br />
                     {selectedStudent.student_id}
                   </div>
@@ -718,9 +902,13 @@ const StudentPaymentManagement = () => {
                     <strong>Email:</strong><br />
                     {selectedStudent.email}
                   </div>
-                  <div className="col-md-3">
+                  <div className="col-md-2">
                     <strong>Phone:</strong><br />
                     {selectedStudent.phone || 'N/A'}
+                  </div>
+                  <div className="col-md-2">
+                    <strong>Cohort:</strong><br />
+                    {selectedStudent.cohort_name || 'N/A'}
                   </div>
                   <div className="col-md-3">
                     <strong>Status:</strong><br />
@@ -881,8 +1069,9 @@ const StudentPaymentManagement = () => {
                           ></textarea>
                         </div>
                         <div className="d-flex gap-2">
-                          <button type="submit" className="btn btn-primary">
-                            <i className="bi bi-check-circle me-1"></i>Add Payment
+                          <button type="submit" className="btn btn-primary" disabled={processing}>
+                            {processing ? <span className="spinner-border spinner-border-sm me-1" /> : <i className="bi bi-check-circle me-1" />}
+                            Add Payment
                           </button>
                           <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentForm(false)}>
                             Cancel
@@ -943,7 +1132,7 @@ const StudentPaymentManagement = () => {
 
                 <div className="d-flex justify-content-between align-items-center mt-4">
                   <h6 className="mb-0">Transactions</h6>
-                  {transactionLoading && (
+                  {detailLoading && (
                     <span className="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true" />
                   )}
                 </div>
@@ -1023,7 +1212,7 @@ const StudentPaymentManagement = () => {
               <div className="text-center text-muted p-4">
                 Select a student from the Students tab to view transactions.
               </div>
-            ) : transactionLoading ? (
+            ) : detailLoading ? (
               <div className="d-flex justify-content-center py-4">
                 <div className="spinner-border text-primary" />
               </div>
@@ -1205,7 +1394,8 @@ const StudentPaymentManagement = () => {
                   <button type="button" className="btn btn-secondary" onClick={() => setShowTransactionForm(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={processing}>
+                    {processing ? <span className="spinner-border spinner-border-sm me-1" /> : null}
                     {transactionFormMode === 'create' ? 'Create Transaction' : 'Save Changes'}
                   </button>
                 </div>
@@ -1310,7 +1500,8 @@ const StudentPaymentManagement = () => {
                   <button type="button" className="btn btn-secondary" onClick={() => setShowEditPaymentForm(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary">
+                  <button type="submit" className="btn btn-primary" disabled={processing}>
+                    {processing ? <span className="spinner-border spinner-border-sm me-1" /> : null}
                     Save Changes
                   </button>
                 </div>
