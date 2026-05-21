@@ -1,5 +1,9 @@
 # Deploy Guide: Vercel Frontend + Render Backend (No Data Loss)
 
+**Production setup in use:**
+- Frontend: **Vercel** → https://prinstinemanagementsystem.com (root directory: `client`)
+- Backend: **Render** → https://prinstine-group-system.onrender.com
+
 This guide deploys:
 - Frontend (`client`) to Vercel
 - Backend (`server`) to Render
@@ -69,15 +73,17 @@ This repo includes `client/vercel.json` with SPA rewrite to prevent 404 on deep 
    - **Framework Preset**: Create React App
    - **Build Command**: `npm run build`
    - **Output Directory**: `build`
-3. Add environment variables:
-   - `REACT_APP_API_URL=https://<your-render-backend-domain>`
-   - Optional: `REACT_APP_SOCKET_URL=https://<your-render-backend-domain>`
-4. Deploy.
+3. Add environment variables (Production):
+   - `REACT_APP_API_URL=https://prinstine-group-system.onrender.com`
+   - Optional: `REACT_APP_SOCKET_URL=https://prinstine-group-system.onrender.com`
+4. Deploy (or **Redeploy** after each `git push` to `main` if auto-deploy is enabled).
+
+> **Important:** Git pushes update Render (API) automatically, but **Vercel must rebuild** to show new UI. After pushing code, open Vercel → Deployments → Redeploy if auto-deploy did not run.
 
 ## 4) Connect backend CORS to frontend
 
 In Render backend env:
-- Set `FRONTEND_URL` to your Vercel production domain.
+- Set `FRONTEND_URL=https://prinstinemanagementsystem.com`
 - Redeploy backend.
 
 ## 5) Verification checklist

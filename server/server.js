@@ -20,6 +20,8 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const allowedSocketOrigins = [
   process.env.FRONTEND_URL,
+  'https://prinstinemanagementsystem.com',
+  'https://www.prinstinemanagementsystem.com',
   'https://prinstinemanagementsystem.org',
   'https://www.prinstinemanagementsystem.org',
   'https://prinstine-group-system-frontend.onrender.com',
@@ -38,6 +40,7 @@ const io = socketIo(server, {
     origin: function (origin, callback) {
       // Allow production domain and other allowed origins
       if (!origin || 
+          origin.includes('prinstinemanagementsystem.com') ||
           origin.includes('prinstinemanagementsystem.org') ||
           origin.includes('prinstine-group-system-frontend.onrender.com') || 
           origin.includes('localhost') || 
