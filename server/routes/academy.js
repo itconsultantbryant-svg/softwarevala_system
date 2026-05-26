@@ -576,6 +576,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
     }
 
     const approved = req.user.role === 'Admin' ? 1 : 0;
+    const userIsActive = 1; // Students must always be able to log in regardless of approval status
     const createdById = parseInt(req.user.id, 10) || req.user.id;
     if (createdById == null || createdById === '') {
       return res.status(400).json({ error: 'Invalid session. Please log in again.' });
@@ -628,7 +629,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
         userResult = await db.run(
           `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-          [normEmail, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, approved]
+          [normEmail, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, userIsActive]
         );
       } catch (userErr) {
         if (isUniqueError(userErr)) {
@@ -645,7 +646,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
               userResult = await db.run(
                 `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-                [normEmail, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, approved]
+                [normEmail, usernameToStore, passwordHash, 'Student', name, phone || null, normProfileImage, userIsActive]
               );
             } catch (retryErr) {
               if (!isUniqueError(retryErr)) throw retryErr;

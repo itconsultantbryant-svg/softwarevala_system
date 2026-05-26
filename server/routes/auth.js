@@ -17,7 +17,7 @@ function generateOTP() {
 
 // Login
 router.post('/login', [
-  body('email').isEmail().withMessage('Valid email is required'),
+  body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
   body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
   const requestStartTime = Date.now();
@@ -316,7 +316,7 @@ router.post('/forgot-password', [
   try {
     const { email } = req.body;
 
-    const user = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+    const user = await db.get('SELECT id FROM users WHERE LOWER(TRIM(email)) = LOWER(TRIM(?)) LIMIT 1', [email]);
     if (!user) {
       // Don't reveal if user exists for security
       return res.json({ message: 'If the email exists, a password reset link has been sent' });
