@@ -150,11 +150,11 @@ export const AuthProvider = ({ children }) => {
       let errorMessage = 'Login failed';
       
       if (error.code === 'ECONNREFUSED' || error.message?.includes('Network Error') || error.message?.includes('NetworkError')) {
-        errorMessage = 'Cannot connect to server. Please make sure the backend server is running on port 3006.';
+        errorMessage = 'Cannot connect to server. Please check your internet connection and try again.';
       } else if (error.message?.includes('timeout') || error.message?.includes('timed out')) {
-        errorMessage = 'Request timed out. The server may be slow or not responding. Please try again.';
+        errorMessage = 'Connection is slow. Please wait a moment and try again.';
       } else if (error.code === 'ERR_NETWORK') {
-        errorMessage = 'Network error. Please check your internet connection and ensure the server is running.';
+        errorMessage = 'Network error. Please check your internet connection and try again.';
       } else if (error.response?.status === 400) {
         // Handle validation errors
         const validationErrors = error.response.data?.errors;

@@ -1,99 +1,72 @@
 /**
- * Centralized API URL utility for production-ready URL handling.
+ * Centralized API URL utility.
  *
- * Render: set REACT_APP_API_URL to your backend HTTPS URL (with or without /api).
- * Socket.IO uses the same host (see getSocketBaseUrl); client prefers HTTP long-polling
- * before WebSocket so restrictive carriers (e.g. some Orange Liberia paths) still connect.
- * If DNS issues persist on one ISP, use a custom domain (Cloudflare) in front of Render.
+ * Production: API calls use the same-origin "/api" path. Vercel rewrites
+ * proxy these to the Render backend server-to-server, avoiding cross-origin
+ * requests that some mobile carriers (Orange Liberia) block or throttle.
+ *
+ * Socket.IO still connects directly to Render because Vercel rewrites
+ * cannot proxy WebSocket upgrade handshakes.
  */
 
 function trimTrailingSlashes(s) {
   return (s || '').replace(/\/+$/, '');
 }
 
-/** Default Render backend when REACT_APP_API_URL is missing at build time (Vercel must rebuild after env changes). */
-const PRODUCTION_API_FALLBACK = 'https://prinstine-group-system.onrender.com';
-
-function normalizeApiBase(raw) {
-  let base = trimTrailingSlashes(raw);
-  if (!/\/api$/i.test(base)) {
-    base = `${base}/api`;
-  }
-  return base;
-}
+const RENDER_BACKEND = 'https://prinstine-group-system.onrender.com';
 
 /**
- * Get the API base URL from environment variable
- * Set REACT_APP_API_URL in Vercel (Production) to your Render backend URL, then redeploy.
- * @returns {string} API base URL
+ * API base URL.
+ * In production, returns "/api" (same-origin, proxied by Vercel).
+ * In development, returns "http://localhost:3006/api".
  */
 export const getApiBaseUrl = () => {
-  let raw = (process.env.REACT_APP_API_URL || '').trim();
-
-  if (!raw && process.env.NODE_ENV === 'production') {
-    console.warn(
-      'REACT_APP_API_URL is not set; using default backend:',
-      PRODUCTION_API_FALLBACK,
-      '— set REACT_APP_API_URL in Vercel and redeploy to override.'
-    );
-    raw = PRODUCTION_API_FALLBACK;
+  if (process.env.NODE_ENV === 'production') {
+    return '/api';
   }
-
-  if (!raw) {
-    return 'http://localhost:3006/api';
+  const raw = (process.env.REACT_APP_API_URL || '').trim();
+  if (raw) {
+    let base = trimTrailingSlashes(raw);
+    if (!/\/api$/i.test(base)) base = `${base}/api`;
+    return base;
   }
-
-  return normalizeApiBase(raw);
+  return 'http://localhost:3006/api';
 };
 
 /**
- * Socket.IO connects to the API host (no /api path). Override with REACT_APP_SOCKET_URL if needed.
+ * Socket.IO connects directly to Render (WebSocket can't go through Vercel rewrites).
  */
 export const getSocketBaseUrl = () => {
   const socketUrl = (process.env.REACT_APP_SOCKET_URL || '').trim();
   if (socketUrl) return trimTrailingSlashes(socketUrl);
-  return getBaseUrl();
+  if (process.env.NODE_ENV === 'production') return RENDER_BACKEND;
+  const raw = (process.env.REACT_APP_API_URL || '').trim();
+  if (raw) return trimTrailingSlashes(raw).replace(/\/api\/?$/, '');
+  return 'http://localhost:3006';
 };
 
 /**
- * Get the base URL (without /api) for file serving
- * @returns {string} Base URL without /api
+ * Base URL (without /api) for file serving (uploads, profile images, etc.)
+ * In production, files are served from Render so we use the full Render URL.
  */
 export const getBaseUrl = () => {
+  if (process.env.NODE_ENV === 'production') return RENDER_BACKEND;
   const apiUrl = getApiBaseUrl();
   if (!apiUrl) return '';
-  
-  // Remove /api suffix if present
   return apiUrl.replace(/\/api\/?$/, '');
 };
 
 /**
  * Normalize a relative URL to full URL
- * @param {string} relativeUrl - Relative URL path (e.g., /uploads/file.jpg)
- * @returns {string} Full URL
  */
 export const normalizeUrl = (relativeUrl) => {
   if (!relativeUrl) return '';
-  
-  // If already a full URL, return as is
-  if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://')) {
+  if (relativeUrl.startsWith('http://') || relativeUrl.startsWith('https://') || relativeUrl.startsWith('data:')) {
     return relativeUrl;
   }
-
-  // If data URL, return as is
-  if (relativeUrl.startsWith('data:')) {
-    return relativeUrl;
-  }
-  
-  // Ensure relative URL starts with /
   const normalizedPath = relativeUrl.startsWith('/') ? relativeUrl : `/${relativeUrl}`;
   const baseUrl = getBaseUrl();
-  
-  if (!baseUrl) {
-    console.error('Cannot normalize URL - base URL not available');
-    return relativeUrl;
-  }
-  
+  if (!baseUrl) return relativeUrl;
   return `${baseUrl}${normalizedPath}`;
 };
 

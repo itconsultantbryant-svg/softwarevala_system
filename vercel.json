@@ -5,6 +5,10 @@
   "outputDirectory": "client/build",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://prinstine-group-system.onrender.com/api/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
