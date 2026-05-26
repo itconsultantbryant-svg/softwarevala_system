@@ -6,6 +6,7 @@ import './Auth.css';
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -104,14 +105,25 @@ const Login = () => {
             <label htmlFor="password" className="form-label">
               <i className="bi bi-lock me-2"></i>Password
             </label>
-            <input
-              type="password"
-              className="form-control"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="input-group">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                className="form-control"
+                id="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+              </button>
+            </div>
           </div>
 
           <div className="mb-3 d-flex justify-content-between">

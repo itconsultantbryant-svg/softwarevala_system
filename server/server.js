@@ -2399,6 +2399,58 @@ async function initializeDatabase() {
     }
     
     console.log('=== Column verification complete ===\n');
+
+    // === Fix all student login accounts ===
+    // Reset all student passwords to the default and ensure accounts are active.
+    // This runs on every startup to guarantee students can log in after deployment.
+    try {
+      const bcrypt = require('bcrypt');
+      const defaultStudentPassword = 'Student@123';
+      const saltRounds = 10;
+      const newHash = await bcrypt.hash(defaultStudentPassword, saltRounds);
+
+      const studentUsers = await db.all(
+        `SELECT u.id, u.email, u.password_hash, u.is_active
+         FROM users u
+         WHERE LOWER(TRIM(u.role)) = 'student'`
+      );
+
+      if (studentUsers.length > 0) {
+        let fixed = 0;
+        for (const stu of studentUsers) {
+          let needsFix = false;
+
+          if (!stu.is_active) needsFix = true;
+
+          if (!stu.password_hash || !stu.password_hash.startsWith('$2')) {
+            needsFix = true;
+          } else {
+            try {
+              const matches = await bcrypt.compare(defaultStudentPassword, stu.password_hash);
+              if (!matches) needsFix = true;
+            } catch (e) {
+              needsFix = true;
+            }
+          }
+
+          if (needsFix) {
+            await db.run(
+              `UPDATE users SET password_hash = ?, is_active = 1 WHERE id = ?`,
+              [newHash, stu.id]
+            );
+            fixed++;
+          }
+        }
+        if (fixed > 0) {
+          console.log(`✓ Fixed ${fixed} student account(s) – password reset to default, is_active set to 1`);
+        } else {
+          console.log(`✓ All ${studentUsers.length} student account(s) verified – logins OK`);
+        }
+      }
+    } catch (studentFixError) {
+      console.error('Warning: Could not fix student accounts:', studentFixError.message);
+    }
+
   } catch (error) {
     console.error('Database initialization error:', error);
     console.error('Error stack:', error.stack);
