@@ -3,17 +3,31 @@ import { getApiBaseUrl } from '../utils/apiUrl';
 
 const API_BASE_URL = getApiBaseUrl();
 
-// Create axios instance
+const isRetryable = (error) => {
+  if (!error.config || error.config.__retryCount >= 3) return false;
+  if (error.response && error.response.status >= 400 && error.response.status < 500) return false;
+  const code = error.code || '';
+  return (
+    !error.response ||
+    code === 'ECONNABORTED' ||
+    code === 'ERR_NETWORK' ||
+    code === 'ETIMEDOUT' ||
+    error.message?.includes('timeout') ||
+    error.message?.includes('Network Error') ||
+    (error.response && error.response.status >= 500)
+  );
+};
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const api = axios.create({
   baseURL: API_BASE_URL,
-  // 90s: slow mobile backhaul (e.g. congested carrier networks in Liberia)
   timeout: 90000,
   headers: {
     'Content-Type': 'application/json'
   }
 });
 
-// Add token to requests
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
@@ -23,50 +37,29 @@ api.interceptors.request.use(
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
-    // Log request for debugging
-    if (config.url?.includes('/auth/login')) {
-      console.log('=== AXIOS REQUEST SENT ===');
-      console.log('URL:', config.baseURL + config.url);
-      console.log('Method:', config.method);
-      console.log('Timeout:', config.timeout, 'ms');
-      console.log('Headers:', config.headers);
-    }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Handle response errors
 api.interceptors.response.use(
-  (response) => {
-    // Log successful responses for debugging
-    if (response.config?.url?.includes('/auth/login')) {
-      console.log('=== LOGIN RESPONSE RECEIVED ===');
-      console.log('Status:', response.status);
-      console.log('Has token:', !!response.data?.token);
-      console.log('Has user:', !!response.data?.user);
+  (response) => response,
+  async (error) => {
+    const config = error.config || {};
+    config.__retryCount = config.__retryCount || 0;
+
+    if (isRetryable(error)) {
+      config.__retryCount += 1;
+      const backoff = Math.min(1000 * Math.pow(2, config.__retryCount - 1), 10000);
+      console.log(`Retrying request (${config.__retryCount}/3) after ${backoff}ms: ${config.url}`);
+      await delay(backoff);
+      return api(config);
     }
-    return response;
-  },
-  (error) => {
-    // Log errors for debugging
-    if (error.config?.url?.includes('/auth/login')) {
-      console.error('=== LOGIN REQUEST ERROR ===');
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
-      console.error('Response status:', error.response?.status);
-      console.error('Response data:', error.response?.data);
-    }
-    
-    // Don't redirect on login page 401 errors (those are expected)
-    // Also don't redirect if we're currently on the login page (to avoid loops)
+
     const isLoginPage = window.location.pathname.includes('/login');
-    const isAuthRequest = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/me');
-    
+    const isAuthRequest = config.url?.includes('/auth/login') || config.url?.includes('/auth/me');
+
     if (error.response?.status === 401 && !isLoginPage && !isAuthRequest) {
-      // Unauthorized - clear token and redirect to login
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';

@@ -6,6 +6,7 @@
   top: 0;
   z-index: 1030;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  flex-shrink: 0;
 }
 
 .topbar-content {
@@ -192,6 +193,9 @@
 @media (max-width: 768px) {
   .topbar {
     padding: 0.5rem 1rem;
+    position: sticky;
+    top: 0;
+    z-index: 1030;
   }
 
   .topbar-menu-btn {

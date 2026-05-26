@@ -3,14 +3,12 @@
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  overflow-y: auto;
 }
 
 .app-layout {
   display: flex;
   min-height: 100vh;
   overflow-x: hidden;
-  overflow-y: auto;
 }
 
 .main-content-wrapper {
@@ -23,13 +21,12 @@
   display: flex;
   flex-direction: column;
   overflow-x: hidden;
-  overflow-y: auto;
 }
 
-.main-content-wrapper > * {
+/* Apply padding to page content but NOT the sticky TopBar */
+.main-content-wrapper > *:not(.topbar) {
   padding: 20px;
   overflow-x: auto;
-  overflow-y: visible;
 }
 
 .sidebar.collapsed ~ .main-content-wrapper {
@@ -39,10 +36,9 @@
 @media (max-width: 768px) {
   .main-content-wrapper {
     margin-left: 0;
-    padding: 12px;
   }
-  
-  .main-content-wrapper > * {
+
+  .main-content-wrapper > *:not(.topbar) {
     padding: 16px;
   }
 }

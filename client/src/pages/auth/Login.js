@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import api from '../../config/api';
 import './Auth.css';
 
 const Login = () => {
@@ -9,8 +10,25 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serverReady, setServerReady] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  // Wake up the backend immediately so it's ready by the time the user submits.
+  // Render free-tier cold-starts can take 30+ seconds; this fires on page load.
+  useEffect(() => {
+    let cancelled = false;
+    const warmup = async () => {
+      try {
+        await api.get('/health', { timeout: 60000 });
+      } catch (_) {
+        // Even a failed TCP handshake is enough to wake Render
+      }
+      if (!cancelled) setServerReady(true);
+    };
+    warmup();
+    return () => { cancelled = true; };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();

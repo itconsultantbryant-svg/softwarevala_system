@@ -85,6 +85,10 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Referer, Accept');
   res.header('Access-Control-Max-Age', '86400');
 
+  // Keep connections alive for slow mobile carriers (Orange, Lonestar MTN)
+  res.header('Connection', 'keep-alive');
+  res.header('Keep-Alive', 'timeout=120');
+
   if (req.method === 'OPTIONS') {
     return res.sendStatus(204);
   }
@@ -2458,6 +2462,9 @@ async function initializeDatabase() {
   }
 }
 
+// Lightweight health-check — wakes Render from cold-start, no auth needed
+app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
 // Routes
 app.use('/api/audit-logs', require('./routes/auditLogs'));
 app.use('/api/auth', require('./routes/auth'));
@@ -2708,6 +2715,12 @@ async function startServer() {
     
     // Bind 0.0.0.0 so Render/cloud health checks can reach the app. Use HOST=127.0.0.1 locally if needed.
     const host = process.env.HOST || '0.0.0.0';
+
+    // Increase keep-alive and header timeouts so slow mobile carriers
+    // (e.g. Orange Liberia) don't get their connections prematurely closed.
+    server.keepAliveTimeout = 120000;   // 120s (default 5s is too aggressive)
+    server.headersTimeout = 125000;     // must be > keepAliveTimeout
+
     server.listen(PORT, host, () => {
       console.log(`Server running on ${host}:${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);

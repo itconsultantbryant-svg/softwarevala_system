@@ -100,26 +100,9 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      console.log('=== LOGIN ATTEMPT START ===');
-      console.log('Email:', email);
-      console.log('API Base URL:', api.defaults.baseURL);
-      console.log('Axios timeout:', api.defaults.timeout, 'ms');
-      console.log('Full URL will be:', `${api.defaults.baseURL}/auth/login`);
-      
-      const startTime = Date.now();
-      console.log('Sending login request at:', new Date().toISOString());
-      
-      // Use axios directly - it already has a 60 second timeout configured
       const response = await api.post('/auth/login', { email, password });
       
-      const endTime = Date.now();
-      console.log('Response received in:', endTime - startTime, 'ms');
-      
-      console.log('Login response received:', response.status);
-      console.log('Response data:', response.data);
-      
       if (!response.data) {
-        console.error('Empty response from server');
         return {
           success: false,
           error: 'Empty response from server. Please try again.'
@@ -129,7 +112,6 @@ export const AuthProvider = ({ children }) => {
       const { token, user } = response.data;
       
       if (!token || !user) {
-        console.error('Invalid response from server:', response.data);
         return {
           success: false,
           error: 'Invalid response from server. Please try again.'
@@ -152,28 +134,18 @@ export const AuthProvider = ({ children }) => {
         profile_image: normalizeImageUrl(user.profile_image)
       };
       
-      console.log('Storing token and user data...');
       localStorage.setItem('token', token);
       localStorage.setItem('user', JSON.stringify(normalizedUser));
       setUser(normalizedUser);
-      
-      // Initialize WebSocket connection asynchronously (don't block login)
+
       try {
         initSocket(user.id);
-        console.log('WebSocket initialized');
       } catch (socketError) {
         console.warn('WebSocket initialization failed (non-critical):', socketError);
-        // Don't fail login if socket fails
       }
-      
-      console.log('Login successful for user:', user.email);
+
       return { success: true };
     } catch (error) {
-      console.error('Login error:', error);
-      console.error('Error code:', error.code);
-      console.error('Error message:', error.message);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
       
       let errorMessage = 'Login failed';
       
