@@ -1,4 +1,6 @@
-# Prinstine Management System (PMS)
+# prinstine-group-office-system
+
+Prinstine Management System (PMS) — office management platform for Prinstine Group of Companies.
 
 A comprehensive, enterprise-level web-based management system for Prinstine Group of Companies. Built with modern web technologies, featuring role-based access control, real-time notifications, and a clean, responsive UI.
 
