@@ -1,6 +1,6 @@
 # Render Backend Deployment
 
-**Backend URL:** https://prinstine-group-system.onrender.com
+**Backend URL:** https://prinstine-pms-backend.onrender.com
 
 This guide deploys the Node.js API (`server/`) on Render with persistent SQLite storage.
 
@@ -78,7 +78,18 @@ Redeploy after changing.
 2. Test login from the Vercel frontend.
 3. Create a record, restart the backend, confirm data persists (disk working).
 
-## 6) Important notes
+## 6) Expected startup logs (Render)
+
+| Message | Meaning |
+|---------|---------|
+| `Using SQLite database` | Normal if `DATABASE_URL` is not set; data lives on the disk at `DB_PATH`. |
+| `Email configuration not found` | Optional; set `EMAIL_*` env vars to enable mail. |
+| `API-only mode: no client/build` | Normal — frontend is on Vercel, not bundled with the API service. |
+| `Your service is live` | Backend is healthy; test `/api/health`. |
+
+To use **PostgreSQL** instead of SQLite, add Render’s `DATABASE_URL` to the backend service and redeploy.
+
+## 7) Important notes
 
 - Do not store SQLite on ephemeral filesystem; use `DB_PATH=/var/data/pms.db`.
 - Keep uploads on `UPLOADS_DIR=/var/data/uploads`.

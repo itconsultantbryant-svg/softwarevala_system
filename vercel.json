@@ -6,7 +6,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://prinstine-group-system.onrender.com/api/:path*"
+      "destination": "https://prinstine-pms-backend.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",

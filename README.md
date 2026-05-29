@@ -46,7 +46,7 @@ npm run dev
 **Live URLs:**
 
 - Frontend: https://prinstinemanagementsystem.com
-- Backend: https://prinstine-group-system.onrender.com
+- Backend: https://prinstine-pms-backend.onrender.com
 
 ## Environment
 

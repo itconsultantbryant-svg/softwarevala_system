@@ -28,8 +28,8 @@ Add in Vercel → **Settings → Environment Variables** (Production):
 
 | Variable | Value |
 |----------|--------|
-| `REACT_APP_API_URL` | `https://prinstine-group-system.onrender.com` (optional fallback; production uses `/api` proxy) |
-| `REACT_APP_SOCKET_URL` | `https://prinstine-group-system.onrender.com` (optional, for real-time) |
+| `REACT_APP_API_URL` | `https://prinstine-pms-backend.onrender.com` (optional fallback; production uses `/api` proxy) |
+| `REACT_APP_SOCKET_URL` | `https://prinstine-pms-backend.onrender.com` (optional, for real-time) |
 
 **Important:** Create React App reads env vars at **build time**. After changing variables, **Redeploy** (Deployments → Redeploy).
 

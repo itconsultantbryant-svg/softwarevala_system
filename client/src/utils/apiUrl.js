@@ -13,7 +13,7 @@ function trimTrailingSlashes(s) {
   return (s || '').replace(/\/+$/, '');
 }
 
-const RENDER_BACKEND = 'https://prinstine-group-system.onrender.com';
+const RENDER_BACKEND = 'https://prinstine-pms-backend.onrender.com';
 
 /**
  * API base URL.

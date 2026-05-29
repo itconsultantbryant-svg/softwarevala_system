@@ -1432,40 +1432,11 @@ async function initializeDatabase() {
         `);
         console.log('✓ Departments table created');
       } else {
-        // Add new columns if they don't exist
-        // Check if columns exist first (PostgreSQL doesn't support IF NOT EXISTS for ALTER TABLE)
-        const deptColumns = await db.all("SELECT column_name FROM information_schema.columns WHERE table_name = 'departments' AND table_schema = 'public'");
-        const deptColumnNames = deptColumns.map(col => col.column_name);
-        
-        if (!deptColumnNames.includes('head_name')) {
+        const { addColumnIfMissing } = require('./utils/schemaHelpers');
+        await addColumnIfMissing(db, 'departments', 'head_name', 'TEXT');
+        await addColumnIfMissing(db, 'departments', 'head_phone', 'TEXT');
+        await addColumnIfMissing(db, 'departments', 'head_email', 'TEXT');
         try {
-          await db.run('ALTER TABLE departments ADD COLUMN head_name TEXT');
-          } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding head_name column:', e.message);
-            }
-          }
-        }
-        if (!deptColumnNames.includes('head_phone')) {
-        try {
-          await db.run('ALTER TABLE departments ADD COLUMN head_phone TEXT');
-          } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding head_phone column:', e.message);
-            }
-          }
-        }
-        if (!deptColumnNames.includes('head_email')) {
-        try {
-          await db.run('ALTER TABLE departments ADD COLUMN head_email TEXT');
-          } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding head_email column:', e.message);
-            }
-          }
-        }
-        try {
-          // Add unique constraint separately if needed
           await db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_departments_head_email ON departments(head_email) WHERE head_email IS NOT NULL');
         } catch (e) { /* Index may already exist */ }
       }
@@ -1499,46 +1470,14 @@ async function initializeDatabase() {
       // Ensure certificates table has new columns
       const certTableExists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='certificates'");
       if (certTableExists) {
-        // Check if columns exist first (PostgreSQL doesn't support IF NOT EXISTS for ALTER TABLE)
-        const certColumns = await db.all("SELECT column_name FROM information_schema.columns WHERE table_name = 'certificates' AND table_schema = 'public'");
-        const certColumnNames = certColumns.map(col => col.column_name);
-        
-        if (!certColumnNames.includes('file_path')) {
-        try {
-          await db.run('ALTER TABLE certificates ADD COLUMN file_path TEXT');
-        } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding file_path column:', e.message);
-        }
-          }
-        }
-        if (!certColumnNames.includes('file_type')) {
-        try {
-          await db.run('ALTER TABLE certificates ADD COLUMN file_type TEXT');
-        } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding file_type column:', e.message);
-        }
-          }
-        }
-        if (!certColumnNames.includes('completion_date')) {
-        try {
-          await db.run('ALTER TABLE certificates ADD COLUMN completion_date DATE');
-        } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding completion_date column:', e.message);
-        }
-          }
-        }
-        if (!certColumnNames.includes('updated_at')) {
-        try {
-            await db.run('ALTER TABLE certificates ADD COLUMN updated_at TIMESTAMP DEFAULT NOW()');
-        } catch (e) {
-            if (!e.message.includes('already exists')) {
-              console.error('Error adding updated_at column:', e.message);
-            }
-          }
-        }
+        const { addColumnIfMissing } = require('./utils/schemaHelpers');
+        await addColumnIfMissing(db, 'certificates', 'file_path', 'TEXT');
+        await addColumnIfMissing(db, 'certificates', 'file_type', 'TEXT');
+        await addColumnIfMissing(db, 'certificates', 'completion_date', 'DATE');
+        const updatedAtDefault = process.env.DATABASE_URL
+          ? 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'
+          : 'DATETIME DEFAULT CURRENT_TIMESTAMP';
+        await addColumnIfMissing(db, 'certificates', 'updated_at', updatedAtDefault);
       }
       
       // Verify admin user exists, create if missing
@@ -2648,25 +2587,23 @@ if (fs.existsSync(buildPath)) {
     });
   });
 } else {
-  console.warn('Frontend build not found at:', buildPath);
-  
-  // If build doesn't exist, handle routes appropriately
+  // Backend-only deploy (e.g. Render API + Vercel frontend) — expected, not an error
+  console.log('API-only mode: no client/build on this service (frontend is on Vercel).');
+  if (process.env.FRONTEND_URL) {
+    console.log('Frontend URL:', process.env.FRONTEND_URL);
+  }
+
   app.all('*', (req, res) => {
     if (req.path.startsWith('/api/')) {
-      // Unmatched API route
-      console.error('404 - API Route not found:', req.method, req.path);
-      return res.status(404).json({ 
+      return res.status(404).json({
         error: 'Route not found',
         path: req.path,
         method: req.method
       });
     }
-    
-    // Non-API route but no build
-    res.status(503).json({ 
-      error: 'Frontend build not found. Please ensure the React app is built.',
-      path: req.path,
-      buildPath: buildPath
+    res.status(404).json({
+      error: 'This host serves the API only. Open the Vercel frontend URL to use the app.',
+      frontend: process.env.FRONTEND_URL || null
     });
   });
 }

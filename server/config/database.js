@@ -181,12 +181,16 @@ class Database {
       const dbInstance = this.db; // Capture db instance for use in callback
       this.db.run(sql, params, function(err) {
         if (err) {
-          console.error('Database run error:', err.message);
-          console.error('SQL:', sql.substring(0, 200));
-          console.error('Params:', params);
-          console.error('Error code:', err.code);
-          // Don't mask errors for INSERT/UPDATE/DELETE - these are critical operations
-          // Only handle "no such table" for GET operations (handled in all/get methods)
+          const msg = (err.message || '').toLowerCase();
+          const isIdempotentSchema =
+            msg.includes('duplicate column') ||
+            msg.includes('already exists');
+          if (!isIdempotentSchema) {
+            console.error('Database run error:', err.message);
+            console.error('SQL:', sql.substring(0, 200));
+            console.error('Params:', params);
+            console.error('Error code:', err.code);
+          }
           reject(err);
         } else {
           // Force immediate checkpoint for critical operations to ensure data persistence
