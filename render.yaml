@@ -4,7 +4,8 @@ services:
     runtime: node
     plan: starter
     rootDir: server
-    buildCommand: npm install
+    # Build API + React client (client/build) — primary UI remains on Vercel
+    buildCommand: npm install && cd ../client && npm install && CI=false npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true

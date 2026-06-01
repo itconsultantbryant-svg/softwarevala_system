@@ -68,8 +68,16 @@ If login returns **405** or the console shows an empty API URL:
 
 ## 7) After code pushes
 
-- **Render** redeploys the API automatically on push (if connected).
-- **Vercel** must rebuild for UI changes — check Deployments or trigger **Redeploy**.
+- **Render** redeploys the API automatically on push (if connected). Render does **not** host the main UI unless you also use a separate Render static service.
+- **Vercel** must rebuild for **every UI change** (forms, login, academy, etc.). Render deploying successfully does **not** update the frontend.
+
+### If UI changes do not appear (e.g. student ID options on enroll)
+
+1. Vercel → **Deployments** → confirm the latest commit matches GitHub `main` (e.g. includes `StudentForm` student ID changes).
+2. If the project still points at an **old GitHub repo**, reconnect: **Settings → Git** → connect `prinstinegroupofcompanies/prinstine-group-office-system`.
+3. **Redeploy** with “Clear build cache” enabled.
+4. Hard refresh the site (Ctrl+Shift+R / clear cache).
+5. In DevTools → Network, open **Add Student** and confirm the page loads a new `main.*.js` hash (not an old cached bundle).
 
 ## 8) Verification
 

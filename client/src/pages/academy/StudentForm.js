@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import api from '../../config/api';
 import { normalizeUrl } from '../../utils/apiUrl';
 import { STUDENT_ID_FORMAT_HINT, isValidStudentIdFormat, normalizeStudentIdInput } from '../../utils/studentIdFormat';
@@ -202,51 +203,17 @@ const StudentForm = ({ student, onClose }) => {
      RENDER
   ========================= */
 
-  return (
-    <div className="modal show d-block" style={{ background: 'rgba(0,0,0,.5)' }}>
-      <div className="modal-dialog modal-lg">
+  const modal = (
+    <div className="modal show d-block" style={{ background: 'rgba(0,0,0,.5)', zIndex: 1060 }} role="dialog" aria-modal="true">
+      <div className="modal-dialog modal-lg modal-dialog-scrollable">
         <form className="modal-content" onSubmit={handleSubmit}>
           <div className="modal-header">
             <h5>{student ? 'Edit Student' : 'Add Student'}</h5>
-            <button type="button" className="btn-close" onClick={onClose} />
+            <button type="button" className="btn-close" onClick={onClose} aria-label="Close" />
           </div>
 
           <div className="modal-body">
             {error && <div className="alert alert-danger">{error}</div>}
-
-            {/* IMAGE */}
-            <div className="mb-3">
-              <label className="form-label">Student Profile Image</label>
-              <div className="mb-2 d-flex align-items-center gap-2 flex-wrap">
-                {formData.profile_image && String(formData.profile_image).trim() !== '' ? (
-                  <>
-                    <img
-                      key={formData.profile_image}
-                      src={formData.profile_image.startsWith('http') ? formData.profile_image : normalizeUrl(formData.profile_image)}
-                      alt={formData.name || 'Student'}
-                      className="img-fluid rounded-circle"
-                      style={{ width: '100px', height: '100px', objectFit: 'cover', border: '3px solid #dee2e6' }}
-                      onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
-                    />
-                    <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setFormData(prev => ({ ...prev, profile_image: null }))}>
-                      Remove
-                    </button>
-                  </>
-                ) : (
-                  <div className="bg-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: '100px', height: '100px', border: '3px solid #dee2e6' }}>
-                    <i className="bi bi-person text-white" style={{ fontSize: '3rem' }} />
-                  </div>
-                )}
-              </div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleImageUpload}
-                disabled={uploadingImage}
-                className="form-control"
-              />
-              {uploadingImage && <small className="text-muted">Uploading...</small>}
-            </div>
 
             {!student && (
               <div className="mb-3 border rounded p-3 bg-light">
@@ -306,6 +273,7 @@ const StudentForm = ({ student, onClose }) => {
                       }
                       placeholder="STU-12345678-AB12"
                       required
+                      autoComplete="off"
                     />
                     <small className="text-muted">Format: {STUDENT_ID_FORMAT_HINT}</small>
                   </>
@@ -319,6 +287,40 @@ const StudentForm = ({ student, onClose }) => {
                 <input type="text" className="form-control font-monospace" value={student.student_id} disabled readOnly />
               </div>
             )}
+
+            {/* IMAGE */}
+            <div className="mb-3">
+              <label className="form-label">Student Profile Image</label>
+              <div className="mb-2 d-flex align-items-center gap-2 flex-wrap">
+                {formData.profile_image && String(formData.profile_image).trim() !== '' ? (
+                  <>
+                    <img
+                      key={formData.profile_image}
+                      src={formData.profile_image.startsWith('http') ? formData.profile_image : normalizeUrl(formData.profile_image)}
+                      alt={formData.name || 'Student'}
+                      className="img-fluid rounded-circle"
+                      style={{ width: '100px', height: '100px', objectFit: 'cover', border: '3px solid #dee2e6' }}
+                      onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
+                    />
+                    <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => setFormData(prev => ({ ...prev, profile_image: null }))}>
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <div className="bg-secondary rounded-circle d-inline-flex align-items-center justify-content-center" style={{ width: '100px', height: '100px', border: '3px solid #dee2e6' }}>
+                    <i className="bi bi-person text-white" style={{ fontSize: '3rem' }} />
+                  </div>
+                )}
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                disabled={uploadingImage}
+                className="form-control"
+              />
+              {uploadingImage && <small className="text-muted">Uploading...</small>}
+            </div>
 
             {/* BASIC INFO */}
             <div className="row">
@@ -394,6 +396,8 @@ const StudentForm = ({ student, onClose }) => {
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 };
 
 export default StudentForm;
