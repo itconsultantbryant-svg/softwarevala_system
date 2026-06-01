@@ -86,32 +86,33 @@ const AcademyStaffPermissions = () => {
   return (
     <div className="card">
       <div className="card-body">
-        <h5 className="card-title">Academy staff permissions</h5>
+        <h5 className="card-title">Academy permissions</h5>
         <p className="text-muted small">
-          Assign permissions to academy department staff. Each permission controls which sections appear
-          on their Academy page. Academy department heads have all permissions except final grade approval
-          (Admin only). Final grade approval applies grades to student records.
+          Assign permissions to any <strong>Staff</strong> or <strong>Department Head</strong>. Users only
+          see Academy menu items and actions for permissions you select. Academy department heads automatically
+          receive full access (except Admin final grade approval). Others need explicit assignments and must
+          log out/in after changes.
         </p>
         {error && <div className="alert alert-danger">{error}</div>}
         {message && <div className="alert alert-success">{message}</div>}
 
         <div className="row">
           <div className="col-md-4 mb-3">
-            <label className="form-label">Academy staff member</label>
+            <label className="form-label">Staff or department head</label>
             <select
               className="form-select"
               value={selectedUserId}
               onChange={(e) => handleSelectStaff(e.target.value)}
             >
-              <option value="">Select staff…</option>
+              <option value="">Select user…</option>
               {staffList.map((s) => (
                 <option key={s.user_id} value={s.user_id}>
-                  {s.name} — {s.department || 'Academy'}
+                  {s.name} ({s.role}) — {s.department || '—'}
                 </option>
               ))}
             </select>
             {staffList.length === 0 && (
-              <p className="small text-muted mt-2">No academy department staff found.</p>
+              <p className="small text-muted mt-2">No staff or department heads found.</p>
             )}
           </div>
           <div className="col-md-8">

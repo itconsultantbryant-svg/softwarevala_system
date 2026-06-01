@@ -20,6 +20,7 @@ const {
 } = require('../utils/academyPermissions');
 
 router.use('/permissions', require('./academyPermissions'));
+router.use('/bulk', require('./academyBulk'));
 const crypto = require('crypto');
 const path = require('path');
 
@@ -1635,32 +1636,10 @@ router.get('/certificates/verify/:code', async (req, res) => {
 
 // ========== GRADES (submit + admin approval) ==========
 
-/** Keep enrollments in sync when an approved grade value or student/course changes */
-async function applyEnrollmentGradeFromSubmission(studentId, courseId, gradeVal) {
-  const enrollExists = await db.get(
-    'SELECT 1 FROM enrollments WHERE student_id = ? AND course_id = ?',
-    [studentId, courseId]
-  );
-  if (!enrollExists) {
-    await db.run(
-      `INSERT INTO enrollments (student_id, course_id, enrollment_date, status, grade, completion_date) VALUES (?, ?, CURRENT_DATE, 'Completed', ?, CURRENT_DATE)`,
-      [studentId, courseId, gradeVal]
-    );
-  } else {
-    await db.run(
-      `UPDATE enrollments SET grade = ?, status = 'Completed', completion_date = CURRENT_DATE WHERE student_id = ? AND course_id = ?`,
-      [gradeVal, studentId, courseId]
-    );
-  }
-}
-
-/** Revert enrollment when an approved grade submission is deleted or moved away from this pair */
-async function clearEnrollmentAfterApprovedGradeRemoved(studentId, courseId) {
-  await db.run(
-    `UPDATE enrollments SET grade = NULL, status = 'Enrolled', completion_date = NULL WHERE student_id = ? AND course_id = ?`,
-    [studentId, courseId]
-  );
-}
+const {
+  applyEnrollmentGradeFromSubmission,
+  clearEnrollmentAfterApprovedGradeRemoved
+} = require('../utils/academyGradeEnrollment');
 
 // POST /api/academy/grades/submit (Instructor + Academy staff)
 router.post('/grades/submit', authenticateToken, [

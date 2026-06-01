@@ -129,6 +129,26 @@ router.post('/login', [
       profile_image: user.profile_image || null,
       emailVerified: user.email_verified === 1
     };
+    if (canonicalRole === 'Staff') {
+      const staff = await db.get('SELECT department, position FROM staff WHERE user_id = ?', [user.id]);
+      if (staff) {
+        userResponse.department = staff.department || null;
+        userResponse.position = staff.position || null;
+      }
+    }
+    if (canonicalRole === 'DepartmentHead') {
+      const userEmail = (userResponse.email || '').toLowerCase().trim();
+      let depts = [];
+      try {
+        depts = await db.all('SELECT name FROM departments WHERE manager_id = ?', [user.id]);
+      } catch (_e) {
+        /* ignore */
+      }
+      if (depts?.length) {
+        userResponse.department = depts[0].name || null;
+        userResponse.academyAccess = depts.some((d) => /academy|elearning|e-learning|marketing/i.test(d.name || ''));
+      }
+    }
     userResponse = await attachAcademyContext(userResponse);
     
     console.log('Login successful, returning user:', {

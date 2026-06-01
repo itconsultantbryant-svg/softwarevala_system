@@ -120,13 +120,8 @@ async function resolveAcademyPermissions(user) {
   if (user.role === 'Instructor') {
     return ['courses:view', 'grades:view', 'grades:manage'];
   }
-  if (user.role === 'Staff') {
-    const stored = await getStoredPermissionsForUser(user.id);
-    if (stored.length > 0) return stored;
-    if (await isLegacyAcademyStaffByDept(user)) {
-      return [...ASSIGNABLE_TO_STAFF_KEYS];
-    }
-    return [];
+  if (user.role === 'Staff' || user.role === 'DepartmentHead') {
+    return getStoredPermissionsForUser(user.id);
   }
   return [];
 }
@@ -156,7 +151,7 @@ async function attachAcademyContext(user) {
     user.role === 'Admin' ||
     isAcademyDeptHead ||
     academyPermissions.length > 0 ||
-    (user.role === 'Instructor');
+    user.role === 'Instructor';
   return {
     ...user,
     isAcademyDepartmentHead: isAcademyDeptHead,
@@ -176,27 +171,42 @@ async function assertAcademyPermission(user, permissionKey) {
 
 async function listAcademyStaffForPermissions() {
   const rows = await db.all(
-    `SELECT s.user_id, s.staff_id, s.department, s.position, u.name, u.email, u.is_active
-     FROM staff s
-     JOIN users u ON s.user_id = u.id
-     WHERE u.role = 'Staff'
-       AND (
-         LOWER(s.department) LIKE '%academy%'
-         OR LOWER(s.department) LIKE '%elearning%'
-         OR LOWER(s.department) LIKE '%e-learning%'
-         OR (LOWER(s.position) LIKE '%academy%' AND LOWER(s.position) LIKE '%coordinator%')
-       )
-     ORDER BY u.name ASC`
+    `SELECT u.id AS user_id, u.name, u.email, u.role, u.is_active,
+            s.staff_id, s.department, s.position
+     FROM users u
+     LEFT JOIN staff s ON s.user_id = u.id
+     WHERE u.role IN ('Staff', 'DepartmentHead')
+     ORDER BY u.role ASC, u.name ASC`
   );
   const result = [];
   for (const row of rows || []) {
+    let department = row.department || null;
+    if (row.role === 'DepartmentHead' && !department) {
+      try {
+        const depts = await db.all('SELECT name FROM departments WHERE manager_id = ?', [row.user_id]);
+        if (depts?.length) department = depts.map((d) => d.name).join(', ');
+      } catch (_e) {
+        /* ignore */
+      }
+    }
     const permissions = await getStoredPermissionsForUser(row.user_id);
-    result.push({ ...row, permissions });
+    result.push({
+      ...row,
+      department: department || (row.role === 'DepartmentHead' ? 'Department Head' : '—'),
+      permissions
+    });
   }
   return result;
 }
 
 async function setStaffAcademyPermissions(targetUserId, permissionKeys, grantedByUserId) {
+  const target = await db.get('SELECT id, role FROM users WHERE id = ?', [targetUserId]);
+  if (!target || !['Staff', 'DepartmentHead'].includes(target.role)) {
+    const err = new Error('Permissions can only be assigned to Staff or Department Head users');
+    err.statusCode = 400;
+    throw err;
+  }
+
   const allowed = new Set(ASSIGNABLE_TO_STAFF_KEYS);
   const cleaned = [...new Set((permissionKeys || []).filter((k) => allowed.has(k)))];
   await db.run('DELETE FROM staff_academy_permissions WHERE user_id = ?', [targetUserId]);

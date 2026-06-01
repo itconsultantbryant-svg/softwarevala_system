@@ -88,7 +88,8 @@ router.put(
       res.json({ message: 'Academy permissions updated', userId, permissions });
     } catch (e) {
       console.error('Set academy permissions error:', e);
-      res.status(500).json({ error: 'Failed to update permissions' });
+      const status = e.statusCode || 500;
+      res.status(status).json({ error: e.message || 'Failed to update permissions' });
     }
   }
 );

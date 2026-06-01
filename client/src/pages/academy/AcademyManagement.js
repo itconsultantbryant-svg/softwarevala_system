@@ -15,6 +15,7 @@ import {
   canFinalApproveGrades
 } from '../../utils/academyPermissions';
 import AcademyStaffPermissions from './AcademyStaffPermissions';
+import AcademyBulkBar from '../../components/academy/AcademyBulkBar';
 import { getSocket } from '../../config/socket';
 import {
   exportCoursesExcel,
@@ -75,7 +76,11 @@ const AcademyManagement = () => {
   });
   /** Client-side sort for student table (API returns alphabetical by name by default) */
   const [studentSort, setStudentSort] = useState('name_asc');
-  
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+  const [selectedInstructorIds, setSelectedInstructorIds] = useState([]);
+  const [selectedCourseIds, setSelectedCourseIds] = useState([]);
+  const [selectedGradeIds, setSelectedGradeIds] = useState([]);
+
   const userIsAcademyStaff = isAcademyStaff(user);
   const canAccessAcademyMgmt =
     user && (user.role === 'Admin' || user.role === 'Instructor' || hasAnyAcademyPermission(user));
@@ -527,6 +532,37 @@ const AcademyManagement = () => {
     }
   };
 
+  const toggleIdInList = (id, list, setList) => {
+    const n = parseInt(id, 10);
+    setList((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  };
+
+  const runBulkApproval = async (path, ids, approved, onDone) => {
+    if (!ids.length) return;
+    try {
+      const res = await api.post(`/academy/bulk/${path}`, { ids, approved });
+      const { succeeded, failed, message } = res.data || {};
+      const failMsg = failed?.length ? `\n${failed.length} failed.` : '';
+      alert(`${message || 'Done'}${failMsg}`);
+      if (onDone) onDone();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Bulk action failed');
+    }
+  };
+
+  const pendingStudentsForBulk = useMemo(
+    () => displayStudents.filter((s) => s.approved === 0 || s.approved === false),
+    [displayStudents]
+  );
+  const pendingInstructorsForBulk = useMemo(
+    () => (instructors || []).filter((i) => i.approved === 0 || i.approved === false),
+    [instructors]
+  );
+  const pendingCoursesForBulk = useMemo(
+    () => (courses || []).filter((c) => c.fee_approved === 0 || c.fee_approved === null || c.fee_approved === undefined),
+    [courses]
+  );
+
   useEffect(() => {
     if (!user || !canAccessAcademyMgmt) return;
     const tabs = ['courses', 'students', 'instructors', 'cohorts', 'grades', 'student-grades', 'certificates', 'permissions'];
@@ -715,10 +751,31 @@ const AcademyManagement = () => {
                   </button>
                 </div>
               )}
+              {canApproveFees && (
+                <AcademyBulkBar
+                  selectedCount={selectedCourseIds.length}
+                  onClear={() => setSelectedCourseIds([])}
+                  approveLabel="Approve fees"
+                  rejectLabel="Reject fees"
+                  onBulkApprove={() =>
+                    runBulkApproval('course-fees', selectedCourseIds, true, () => {
+                      setSelectedCourseIds([]);
+                      fetchCourses();
+                    })
+                  }
+                  onBulkReject={() =>
+                    runBulkApproval('course-fees', selectedCourseIds, false, () => {
+                      setSelectedCourseIds([]);
+                      fetchCourses();
+                    })
+                  }
+                />
+              )}
               <div className="table-responsive">
                 <table className="table table-hover">
                   <thead>
                     <tr>
+                      {canApproveFees && <th style={{ width: 40 }} />}
                       <th>Course Code</th>
                       <th>Title</th>
                       <th>Fee</th>
@@ -731,6 +788,18 @@ const AcademyManagement = () => {
                   <tbody>
                     {courses.map((course) => (
                       <tr key={course.id}>
+                        {canApproveFees && (
+                          <td>
+                            {(course.fee_approved === 0 || course.fee_approved == null) ? (
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedCourseIds.includes(course.id)}
+                                onChange={() => toggleIdInList(course.id, selectedCourseIds, setSelectedCourseIds)}
+                              />
+                            ) : null}
+                          </td>
+                        )}
                         <td><strong>{course.course_code}</strong></td>
                         <td>{course.title}</td>
                         <td>${parseFloat(course.course_fee || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -945,11 +1014,50 @@ const AcademyManagement = () => {
                 Clear filters
               </button>
             </div>
+
+            {canApproveStudentRecords && (
+              <AcademyBulkBar
+                selectedCount={selectedStudentIds.length}
+                onClear={() => setSelectedStudentIds([])}
+                onBulkApprove={() =>
+                  runBulkApproval('students', selectedStudentIds, true, () => {
+                    setSelectedStudentIds([]);
+                    fetchStudents();
+                  })
+                }
+                onBulkReject={() =>
+                  runBulkApproval('students', selectedStudentIds, false, () => {
+                    setSelectedStudentIds([]);
+                    fetchStudents();
+                  })
+                }
+              />
+            )}
             
             <div className="table-responsive">
               <table className="table table-hover table-sm align-middle">
                   <thead className="table-light">
                   <tr>
+                    {canApproveStudentRecords && (
+                      <th style={{ width: 40 }}>
+                        <input
+                          type="checkbox"
+                          className="form-check-input"
+                          title="Select all pending"
+                          checked={
+                            pendingStudentsForBulk.length > 0 &&
+                            pendingStudentsForBulk.every((s) => selectedStudentIds.includes(s.id))
+                          }
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds(pendingStudentsForBulk.map((s) => s.id));
+                            } else {
+                              setSelectedStudentIds([]);
+                            }
+                          }}
+                        />
+                      </th>
+                    )}
                     <th scope="col">Student ID</th>
                     <th scope="col">Name</th>
                     <th>Email</th>
@@ -963,13 +1071,25 @@ const AcademyManagement = () => {
                 <tbody>
                   {displayStudents.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="text-center text-muted">
+                      <td colSpan={canApproveStudentRecords ? 9 : 8} className="text-center text-muted">
                         No students match the current filters. Try clearing filters or add a student.
                       </td>
                     </tr>
                   ) : (
                     displayStudents.map((student) => (
                       <tr key={student.id}>
+                        {canApproveStudentRecords && (
+                          <td>
+                            {(student.approved === 0 || student.approved === false) ? (
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedStudentIds.includes(student.id)}
+                                onChange={() => toggleIdInList(student.id, selectedStudentIds, setSelectedStudentIds)}
+                              />
+                            ) : null}
+                          </td>
+                        )}
                         <td>{student.student_id}</td>
                         <td>{student.name}</td>
                         <td>{student.email}</td>
@@ -1071,10 +1191,29 @@ const AcademyManagement = () => {
                   </button>
                 </div>
               )}
+              {canApproveInstructorRecords && (
+                <AcademyBulkBar
+                  selectedCount={selectedInstructorIds.length}
+                  onClear={() => setSelectedInstructorIds([])}
+                  onBulkApprove={() =>
+                    runBulkApproval('instructors', selectedInstructorIds, true, () => {
+                      setSelectedInstructorIds([]);
+                      fetchInstructors();
+                    })
+                  }
+                  onBulkReject={() =>
+                    runBulkApproval('instructors', selectedInstructorIds, false, () => {
+                      setSelectedInstructorIds([]);
+                      fetchInstructors();
+                    })
+                  }
+                />
+              )}
               <div className="table-responsive">
                 <table className="table table-hover">
                   <thead>
                     <tr>
+                      {canApproveInstructorRecords && <th style={{ width: 40 }} />}
                       <th>Instructor ID</th>
                       <th>Name</th>
                       <th>Email</th>
@@ -1087,6 +1226,18 @@ const AcademyManagement = () => {
                   <tbody>
                     {instructors.map((instructor) => (
                       <tr key={instructor.id}>
+                        {canApproveInstructorRecords && (
+                          <td>
+                            {(instructor.approved === 0 || instructor.approved === false) ? (
+                              <input
+                                type="checkbox"
+                                className="form-check-input"
+                                checked={selectedInstructorIds.includes(instructor.id)}
+                                onChange={() => toggleIdInList(instructor.id, selectedInstructorIds, setSelectedInstructorIds)}
+                              />
+                            ) : null}
+                          </td>
+                        )}
                         <td><strong>{instructor.instructor_id}</strong></td>
                         <td>{instructor.name}</td>
                         <td>{instructor.email}</td>
@@ -1309,6 +1460,32 @@ const AcademyManagement = () => {
                   Pending grades
                   {canFinalApprove ? ' — Admin final approval applies grades' : canEndorse ? ' — Endorse then admin final approval' : ''}
                 </div>
+                {(canEndorse || canFinalApprove) && (
+                  <div className="card-body border-bottom py-2">
+                    <AcademyBulkBar
+                      selectedCount={selectedGradeIds.length}
+                      onClear={() => setSelectedGradeIds([])}
+                      showApprove={false}
+                      showReject={false}
+                      showEndorse={canEndorse}
+                      showFinalApprove={canFinalApprove}
+                      onBulkEndorse={() =>
+                        api.post('/academy/bulk/grades/endorse', { ids: selectedGradeIds }).then(() => {
+                          setSelectedGradeIds([]);
+                          fetchGradesPending();
+                          alert('Bulk endorse completed');
+                        }).catch((err) => alert(err.response?.data?.error || 'Bulk endorse failed'))
+                      }
+                      onBulkFinalApprove={() =>
+                        api.post('/academy/bulk/grades/final-approve', { ids: selectedGradeIds }).then(() => {
+                          setSelectedGradeIds([]);
+                          fetchGradesPending();
+                          alert('Bulk final approval completed');
+                        }).catch((err) => alert(err.response?.data?.error || 'Bulk approve failed'))
+                      }
+                    />
+                  </div>
+                )}
                 <div className="card-body p-0">
                   {gradesPendingLoading ? (
                     <div className="text-center py-4"><div className="spinner-border text-primary" /></div>
@@ -1319,6 +1496,7 @@ const AcademyManagement = () => {
                       <table className="table table-hover mb-0">
                         <thead>
                           <tr>
+                            {(canEndorse || canFinalApprove) && <th style={{ width: 40 }} />}
                             <th>Student</th>
                             <th>Course</th>
                             <th>Grade</th>
@@ -1330,6 +1508,16 @@ const AcademyManagement = () => {
                         <tbody>
                           {gradesPending.map((g) => (
                             <tr key={g.id}>
+                              {(canEndorse || canFinalApprove) && (
+                                <td>
+                                  <input
+                                    type="checkbox"
+                                    className="form-check-input"
+                                    checked={selectedGradeIds.includes(g.id)}
+                                    onChange={() => toggleIdInList(g.id, selectedGradeIds, setSelectedGradeIds)}
+                                  />
+                                </td>
+                              )}
                               <td><strong>{g.student_name}</strong><br /><small className="text-muted">{g.student_email}</small></td>
                               <td>{g.course_title} ({g.course_code})</td>
                               <td><strong>{g.proposed_grade}</strong></td>
