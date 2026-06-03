@@ -140,6 +140,81 @@ router.get('/students/me/courses', authenticateToken, requireRole('Student'), as
   }
 });
 
+// GET /api/academy/students/me/class-links — online class links for enrolled courses
+router.get('/students/me/class-links', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found' });
+    const links = await db.all(
+      `SELECT l.*, c.course_code, c.title as course_title
+       FROM course_class_links l
+       JOIN courses c ON l.course_id = c.id
+       JOIN student_course_enrollments e ON e.course_id = l.course_id AND e.student_id = ?
+       WHERE e.status != 'Dropped'
+       ORDER BY l.created_at DESC`,
+      [student.id]
+    );
+    res.json({ links });
+  } catch (e) {
+    console.error('Get students/me/class-links error:', e);
+    res.status(500).json({ error: 'Failed to fetch class links' });
+  }
+});
+
+// GET /api/academy/students/me/materials — assignments / course materials
+router.get('/students/me/materials', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found' });
+    const materials = await db.all(
+      `SELECT a.*, c.course_code, c.title as course_title
+       FROM course_assignments a
+       JOIN courses c ON a.course_id = c.id
+       JOIN student_course_enrollments e ON e.course_id = a.course_id AND e.student_id = ?
+       WHERE e.status != 'Dropped'
+       ORDER BY a.created_at DESC`,
+      [student.id]
+    );
+    res.json({ materials });
+  } catch (e) {
+    console.error('Get students/me/materials error:', e);
+    res.status(500).json({ error: 'Failed to fetch materials' });
+  }
+});
+
+// GET /api/academy/students/me/attendance — attendance records
+router.get('/students/me/attendance', authenticateToken, requireRole('Student'), async (req, res) => {
+  try {
+    const student = await getCurrentStudent(req);
+    if (!student) return res.status(404).json({ error: 'Student record not found' });
+    const records = await db.all(
+      `SELECT sa.*, c.course_code, c.title as course_title
+       FROM student_attendance sa
+       JOIN courses c ON sa.course_id = c.id
+       WHERE sa.student_id = ?
+       ORDER BY sa.session_date DESC, c.course_code ASC`,
+      [student.id]
+    );
+    const summary = await db.all(
+      `SELECT sa.course_id, c.course_code, c.title as course_title,
+              SUM(CASE WHEN sa.status = 'Present' THEN 1 ELSE 0 END) as present_count,
+              SUM(CASE WHEN sa.status = 'Absent' THEN 1 ELSE 0 END) as absent_count,
+              SUM(CASE WHEN sa.status = 'Late' THEN 1 ELSE 0 END) as late_count,
+              COUNT(*) as total_sessions
+       FROM student_attendance sa
+       JOIN courses c ON sa.course_id = c.id
+       WHERE sa.student_id = ?
+       GROUP BY sa.course_id, c.course_code, c.title
+       ORDER BY c.course_code`,
+      [student.id]
+    );
+    res.json({ records, summary });
+  } catch (e) {
+    console.error('Get students/me/attendance error:', e);
+    res.status(500).json({ error: 'Failed to fetch attendance' });
+  }
+});
+
 // GET /api/academy/students/me/billing — per-course balances + pending transactions
 router.get('/students/me/billing', authenticateToken, requireRole('Student'), async (req, res) => {
   try {
@@ -1064,6 +1139,9 @@ router.get('/instructors', authenticateToken, async (req, res) => {
   }
 });
 
+// Instructor self-service portal
+router.use('/instructor-portal', require('./instructorPortal'));
+
 // Create instructor (Admin and Academy Heads can create, but Academy Heads need approval)
 router.post('/instructors', authenticateToken, requireRole('Admin', 'DepartmentHead', 'Staff'), [
   body('email').isEmail().normalizeEmail(),
@@ -1684,16 +1762,17 @@ router.post('/grades/submit', authenticateToken, [
     await logAction(req.user.id, 'submit_grade', 'academy', run.lastID, { student_id, course_id, proposed_grade }, req);
 
     try {
-      await sendNotificationToRole('Admin', {
-        title: 'New grade submission',
-        message: `Grade "${proposed_grade}" submitted for student/course.`,
+      const { notifyAcademyCoordinators } = require('../utils/instructorHelpers');
+      await notifyAcademyCoordinators({
+        title: 'Grade pending coordinator review',
+        message: `Grade "${proposed_grade}" submitted and awaiting coordinator approval.`,
         type: 'info',
-        link: '/academy?grades=pending',
+        link: '/academy?tab=grades',
         senderId: req.user.id
-      });
-    } catch (e) { console.error('Grade submit notify Admin error:', e); }
+      }, req.user.id);
+    } catch (e) { console.error('Grade submit notify coordinator error:', e); }
 
-    res.status(201).json({ message: 'Grade submitted for approval', submission: { id: run.lastID, status: 'Pending' } });
+    res.status(201).json({ message: 'Grade submitted for coordinator review', submission: { id: run.lastID, status: 'Pending' } });
   } catch (e) {
     console.error('Grade submit error:', e);
     res.status(500).json({ error: 'Failed to submit grade' });
@@ -1800,7 +1879,16 @@ router.put('/grades/:id/endorse', authenticateToken, [
       [req.user.id, notes, id]
     );
     await logAction(req.user.id, 'endorse_grade', 'academy', id, {}, req);
-    res.json({ message: 'Grade endorsed — awaiting admin final approval', submission: { id: parseInt(id, 10), endorsed: true } });
+    try {
+      await sendNotificationToRole('Admin', {
+        title: 'Grade awaiting CEO approval',
+        message: 'A grade has been approved by the coordinator and needs final CEO approval.',
+        type: 'info',
+        link: '/academy?tab=grades',
+        senderId: req.user.id
+      });
+    } catch (e) { console.error('Grade endorse notify CEO error:', e); }
+    res.json({ message: 'Grade approved by coordinator — awaiting CEO final approval', submission: { id: parseInt(id, 10), endorsed: true } });
   } catch (e) {
     console.error('Grade endorse error:', e);
     res.status(500).json({ error: 'Failed to endorse grade' });
@@ -1837,9 +1925,9 @@ router.put('/grades/:id/approve', authenticateToken, [
       try {
         const c = await db.get('SELECT course_code, title FROM courses WHERE id = ?', [g.course_id]);
         await sendNotificationToUser(student.user_id, {
-          title: 'Grade approved',
-          message: `Your grade ${gradeVal} for ${c ? c.title || c.course_code : 'course'} has been approved.`,
-          type: 'info',
+          title: 'Results published',
+          message: `Your grade ${gradeVal} for ${c ? c.title || c.course_code : 'course'} has been published.`,
+          type: 'success',
           link: '/student/grades',
           senderId: req.user.id
         });
@@ -2112,6 +2200,18 @@ router.put('/instructors/:id/approve', authenticateToken, async (req, res, next)
     );
 
     await logAction(req.user.id, approved ? 'approve_instructor' : 'reject_instructor', 'academy', req.params.id, { approved }, req);
+
+    try {
+      await sendNotificationToUser(instructor.user_id, {
+        title: approved ? 'Instructor account approved' : 'Instructor account rejected',
+        message: approved
+          ? 'Your lecturer account has been approved. You can now submit grades, post class links, and manage your courses.'
+          : `Your instructor application was rejected.${admin_notes ? ` Reason: ${admin_notes}` : ''}`,
+        type: approved ? 'success' : 'warning',
+        link: '/instructor-dashboard',
+        senderId: req.user.id
+      });
+    } catch (e) { console.error('Instructor approve notify error:', e); }
 
     res.json({ message: `Instructor ${approved ? 'approved' : 'rejected'} successfully` });
   } catch (error) {

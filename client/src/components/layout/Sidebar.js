@@ -240,8 +240,23 @@ const Sidebar = () => {
     pushSection('Main');
     if (userRole === 'student') {
       items.push({ path: '/student', label: 'Student Portal', icon: 'bi-mortarboard', roles: ['Student'], studentPortal: true });
+      pushSection('Academics');
+      items.push(
+        { path: '/student/courses', label: 'My Courses', icon: 'bi-journal-bookmark', roles: ['Student'], studentPortal: true },
+        { path: '/student/class-links', label: 'Class Links', icon: 'bi-camera-video', roles: ['Student'], studentPortal: true },
+        { path: '/student/materials', label: 'Materials', icon: 'bi-file-earmark-text', roles: ['Student'], studentPortal: true },
+        { path: '/student/grades', label: 'Grades & Results', icon: 'bi-award', roles: ['Student'], studentPortal: true },
+        { path: '/student/attendance', label: 'Attendance', icon: 'bi-calendar-check', roles: ['Student'], studentPortal: true },
+        { path: '/student/certificates', label: 'Certificates', icon: 'bi-patch-check', roles: ['Student'], studentPortal: true },
+        { path: '/student/billing', label: 'Billing', icon: 'bi-credit-card', roles: ['Student'], studentPortal: true }
+      );
     } else if (userRole === 'instructor') {
-      items.push({ path: '/instructor-dashboard', label: 'Instructor Dashboard', icon: 'bi-house', roles: ['Instructor'], instructorMain: true });
+      items.push({ path: '/instructor-dashboard', label: 'Lecturer Portal', icon: 'bi-house', roles: ['Instructor'], instructorMain: true });
+      pushSection('Teaching');
+      items.push(
+        { path: '/instructor-dashboard', label: 'Overview', icon: 'bi-grid', roles: ['Instructor'], instructorPortal: true },
+        { path: '/communications', label: 'Message Students', icon: 'bi-chat-dots', roles: ['Instructor'], instructorPortal: true }
+      );
     } else if (userRole === 'staff') {
       items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house', roles: ['Staff'] });
     } else if (userRole === 'departmenthead') {
@@ -393,8 +408,9 @@ const Sidebar = () => {
               const academyOk = !item.academy || hasAcademyAccess || item.instructorAcademy === true;
               const financeOk = !item.finance || hasFinanceAccess;
               const studentPortalOk = !item.studentPortal || normalizeRole(user?.role) === 'student';
+              const instructorPortalOk = !item.instructorPortal || normalizeRole(user?.role) === 'instructor';
               
-              return roleOk && academyOk && financeOk && studentPortalOk;
+              return roleOk && academyOk && financeOk && studentPortalOk && instructorPortalOk;
             })
             .map(item => {
               if (item.type === 'section') {

@@ -1,12 +1,15 @@
-.instructor-dashboard {
-  min-height: calc(100vh - 120px);
-}
-
 .instructor-dashboard__hero {
-  max-width: 640px;
-  margin: 2rem auto 0;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
 
 .instructor-dashboard__icon {
-  font-size: 3.5rem;
+  font-size: 2.5rem;
+}
+
+.instructor-dashboard .nav-tabs .nav-link {
+  white-space: nowrap;
+}
+
+.instructor-dashboard .card {
+  border-radius: 0.5rem;
 }

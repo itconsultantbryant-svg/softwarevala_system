@@ -56,6 +56,9 @@ import Appraisals from './pages/appraisals/Appraisals';
 import StudentPaymentManagement from './pages/departments/StudentPaymentManagement';
 import StudentPortal from './pages/academy/StudentPortal';
 import InstructorDashboard from './pages/academy/InstructorDashboard';
+import StudentClassLinks from './pages/academy/StudentClassLinks';
+import StudentMaterials from './pages/academy/StudentMaterials';
+import StudentAttendance from './pages/academy/StudentAttendance';
 import './pages/academy/StudentPortal.css';
 import StudentCertificates from './pages/academy/StudentCertificates';
 import StudentCourses from './pages/academy/StudentCourses';
@@ -129,6 +132,9 @@ function App() {
                           <Route path="/student" element={<PrivateRoute requiredRole="Student"><StudentPortal /></PrivateRoute>} />
                           <Route path="/student/courses" element={<PrivateRoute requiredRole="Student"><StudentCourses /></PrivateRoute>} />
                           <Route path="/student/grades" element={<PrivateRoute requiredRole="Student"><StudentGrades /></PrivateRoute>} />
+                          <Route path="/student/class-links" element={<PrivateRoute requiredRole="Student"><StudentClassLinks /></PrivateRoute>} />
+                          <Route path="/student/materials" element={<PrivateRoute requiredRole="Student"><StudentMaterials /></PrivateRoute>} />
+                          <Route path="/student/attendance" element={<PrivateRoute requiredRole="Student"><StudentAttendance /></PrivateRoute>} />
                           <Route path="/student/certificates" element={<PrivateRoute requiredRole="Student"><StudentCertificates /></PrivateRoute>} />
                           <Route path="/student/billing" element={<PrivateRoute requiredRole="Student"><StudentBilling /></PrivateRoute>} />
                           <Route path="/student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />

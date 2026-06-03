@@ -1214,7 +1214,26 @@ const AcademyManagement = () => {
                 <table className="table table-hover">
                   <thead>
                     <tr>
-                      {canApproveInstructorRecords && <th style={{ width: 40 }} />}
+                      {canApproveInstructorRecords && (
+                        <th style={{ width: 40 }}>
+                          <input
+                            type="checkbox"
+                            className="form-check-input"
+                            title="Select all pending instructors"
+                            checked={
+                              pendingInstructorsForBulk.length > 0 &&
+                              pendingInstructorsForBulk.every((i) => selectedInstructorIds.includes(i.id))
+                            }
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedInstructorIds(pendingInstructorsForBulk.map((i) => i.id));
+                              } else {
+                                setSelectedInstructorIds([]);
+                              }
+                            }}
+                          />
+                        </th>
+                      )}
                       <th>Instructor ID</th>
                       <th>Name</th>
                       <th>Email</th>
@@ -1459,7 +1478,7 @@ const AcademyManagement = () => {
               <div className="card">
                 <div className="card-header fw-bold">
                   Pending grades
-                  {canFinalApprove ? ' — Admin final approval applies grades' : canEndorse ? ' — Endorse then admin final approval' : ''}
+                  {canFinalApprove ? ' — CEO final approval publishes grades to students' : canEndorse ? ' — Coordinator review, then CEO final approval' : ''}
                 </div>
                 {(canEndorse || canFinalApprove) && (
                   <div className="card-body border-bottom py-2">
@@ -1502,7 +1521,7 @@ const AcademyManagement = () => {
                             <th>Course</th>
                             <th>Grade</th>
                             <th>Submitted by</th>
-                            <th>Endorsed</th>
+                            <th>Coordinator</th>
                             <th></th>
                           </tr>
                         </thead>
@@ -1539,10 +1558,10 @@ const AcademyManagement = () => {
                                     </>
                                   )}
                                   {canFinalApprove && (
-                                    <button type="button" className="btn btn-sm btn-success" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>Final approve</button>
+                                    <button type="button" className="btn btn-sm btn-success" onClick={() => { setGradeActionId(g.id); setGradeActionMode('approve'); setGradeNotes(''); }}>CEO approve</button>
                                   )}
                                   {canEndorse && !g.endorsed_by && (
-                                    <button type="button" className="btn btn-sm btn-outline-info" onClick={() => { setGradeActionId(g.id); setGradeActionMode('endorse'); setGradeNotes(''); }}>Endorse</button>
+                                    <button type="button" className="btn btn-sm btn-outline-info" onClick={() => { setGradeActionId(g.id); setGradeActionMode('endorse'); setGradeNotes(''); }}>Coordinator approve</button>
                                   )}
                                   {(canFinalApprove || canEndorse) && (
                                     <button type="button" className="btn btn-sm btn-danger" onClick={() => { setGradeActionId(g.id); setGradeActionMode('reject'); setGradeNotes(''); }}>Reject</button>
@@ -1566,7 +1585,7 @@ const AcademyManagement = () => {
                     <div className="modal-content">
                       <div className="modal-header">
                         <h5 className="modal-title">
-                          {gradeActionMode === 'approve' ? 'Final approve grade' : gradeActionMode === 'endorse' ? 'Endorse grade' : 'Reject grade'}
+                          {gradeActionMode === 'approve' ? 'CEO final approval' : gradeActionMode === 'endorse' ? 'Coordinator approval' : 'Reject grade'}
                         </h5>
                         <button type="button" className="btn-close" onClick={() => { setGradeActionId(null); setGradeActionMode(null); setGradeNotes(''); }} aria-label="Close" />
                       </div>
@@ -1577,9 +1596,9 @@ const AcademyManagement = () => {
                       <div className="modal-footer">
                         <button type="button" className="btn btn-secondary" onClick={() => { setGradeActionId(null); setGradeActionMode(null); setGradeNotes(''); }}>Cancel</button>
                         {gradeActionMode === 'approve' ? (
-                          <button type="button" className="btn btn-success" onClick={() => handleGradeApprove(gradeActionId)}>Final approve</button>
+                          <button type="button" className="btn btn-success" onClick={() => handleGradeApprove(gradeActionId)}>CEO approve & publish</button>
                         ) : gradeActionMode === 'endorse' ? (
-                          <button type="button" className="btn btn-info" onClick={() => handleGradeEndorse(gradeActionId)}>Endorse</button>
+                          <button type="button" className="btn btn-info" onClick={() => handleGradeEndorse(gradeActionId)}>Coordinator approve</button>
                         ) : (
                           <button type="button" className="btn btn-danger" onClick={() => handleGradeReject(gradeActionId)}>Reject</button>
                         )}

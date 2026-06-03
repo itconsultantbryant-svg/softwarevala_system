@@ -46,12 +46,12 @@ const AcademyBulkBar = ({
       )}
       {showEndorse && onBulkEndorse && (
         <button type="button" className="btn btn-sm btn-info" disabled={busy} onClick={() => run(onBulkEndorse)}>
-          Endorse selected
+          Coordinator approve selected
         </button>
       )}
       {showFinalApprove && onBulkFinalApprove && (
         <button type="button" className="btn btn-sm btn-success" disabled={busy} onClick={() => run(onBulkFinalApprove)}>
-          Final approve selected
+          CEO approve selected
         </button>
       )}
       <button type="button" className="btn btn-sm btn-outline-secondary ms-auto" disabled={busy} onClick={onClear}>

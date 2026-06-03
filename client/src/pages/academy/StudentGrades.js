@@ -72,8 +72,11 @@ const StudentGrades = () => {
 
   return (
     <div className="container-fluid">
-      <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-        <h3 className="mb-0">My Grades</h3>
+      <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+        <div>
+          <h3 className="mb-1">My Grades & Results</h3>
+          <p className="text-muted small mb-0">Only grades fully approved by the coordinator and CEO are published here.</p>
+        </div>
         <div className="d-flex flex-wrap gap-2">
           <button
             type="button"

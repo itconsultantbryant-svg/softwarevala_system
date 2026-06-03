@@ -2306,6 +2306,33 @@ async function initializeDatabase() {
       }
     }
 
+    const instructorPortalPath = path.join(__dirname, 'database/migrations/033_academy_instructor_portal.sql');
+    if (fs.existsSync(instructorPortalPath)) {
+      const portalTables = ['course_class_links', 'course_assignments', 'student_attendance'];
+      let needsMigration = false;
+      for (const table of portalTables) {
+        const exists = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name=?", [table]);
+        if (!exists) { needsMigration = true; break; }
+      }
+      if (needsMigration) {
+        console.log('Running academy instructor portal migration (033)...');
+        const sql = fs.readFileSync(instructorPortalPath, 'utf8');
+        const stmts = sql.split(';').filter((s) => s.trim().length > 0);
+        for (const statement of stmts) {
+          if (statement.trim()) {
+            try {
+              await db.run(statement);
+            } catch (e) {
+              if (!e.message.includes('already exists') && !e.message.includes('duplicate')) {
+                console.error('Error executing 033 migration:', e.message);
+              }
+            }
+          }
+        }
+        console.log('✓ academy instructor portal tables created');
+      }
+    }
+
     const { addColumnIfMissing } = require('./utils/schemaHelpers');
     await addColumnIfMissing(db, 'grade_submissions', 'endorsed_by', 'INTEGER');
     await addColumnIfMissing(db, 'grade_submissions', 'endorsed_at', 'DATETIME');

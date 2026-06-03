@@ -124,7 +124,7 @@ const StudentPortal = () => {
             {greeting}, {displayName}
           </h1>
           <p style={{ margin: 0, opacity: 0.92, fontSize: '0.95rem' }}>
-            Welcome to your student portal. View courses, grades, billing, and certificates.
+            Welcome to your student portal. View courses, class links, materials, grades, attendance, billing, and certificates.
           </p>
         </div>
 
@@ -207,6 +207,33 @@ const StudentPortal = () => {
         {/* Quick actions */}
         <h3 className="student-portal__section-title">Quick access</h3>
         <div className="student-portal__actions">
+          <Link to="/student/class-links" className="student-portal__action-card">
+            <div className="student-portal__action-icon student-portal__action-icon--courses">
+              <i className="bi bi-camera-video-fill" />
+            </div>
+            <h4 className="student-portal__action-title">Class Links</h4>
+            <p className="student-portal__action-desc">
+              Join online classes for your enrolled courses.
+            </p>
+          </Link>
+          <Link to="/student/materials" className="student-portal__action-card">
+            <div className="student-portal__action-icon student-portal__action-icon--grades">
+              <i className="bi bi-file-earmark-text-fill" />
+            </div>
+            <h4 className="student-portal__action-title">Materials</h4>
+            <p className="student-portal__action-desc">
+              Download assignments and course materials from lecturers.
+            </p>
+          </Link>
+          <Link to="/student/attendance" className="student-portal__action-card">
+            <div className="student-portal__action-icon student-portal__action-icon--billing">
+              <i className="bi bi-calendar-check-fill" />
+            </div>
+            <h4 className="student-portal__action-title">Attendance</h4>
+            <p className="student-portal__action-desc">
+              Track your attendance and academic progress by course.
+            </p>
+          </Link>
           <Link to="/student/courses" className="student-portal__action-card">
             <div className="student-portal__action-icon student-portal__action-icon--courses">
               <i className="bi bi-journal-bookmark-fill" />
