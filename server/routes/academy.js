@@ -6,6 +6,7 @@ const { authenticateToken, requireRole, getFinanceAccessUserIds } = require('../
 const { logAction } = require('../utils/audit');
 const { sendBulkNotifications, sendNotificationToUser, sendNotificationToRole } = require('../utils/notifications');
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
+const { normalizeAccountEmail } = require('../utils/emailNormalize');
 const { resolveUploadsDiskPath } = require('../utils/uploadsRoot');
 const { deliverCertificateBinary } = require('../utils/certificateFileDelivery');
 const {
@@ -586,7 +587,7 @@ router.post('/students', authenticateToken, requireRole('Admin', 'Instructor', '
     } = req.body;
 
     const normProfileImage = normalizeProfileImage(profile_image) ?? null;
-    const normEmail = (email || '').toString().toLowerCase().trim();
+    const normEmail = normalizeAccountEmail(email);
     if (!normEmail) {
       return res.status(400).json({ error: 'A valid email address is required.' });
     }
@@ -1170,7 +1171,10 @@ router.post('/instructors', authenticateToken, requireRole('Admin', 'DepartmentH
 
     const { email, name, username, phone, specialization, courses_assigned, password, profile_image } = req.body;
     const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
-    const normEmail = (email || '').toString().toLowerCase().trim();
+    const normEmail = normalizeAccountEmail(email);
+    if (!normEmail) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
     const usernameToStore = (username || '').toString().trim() || normEmail.split('@')[0];
 
     const existingUser = await db.get(
@@ -2256,10 +2260,10 @@ router.put('/instructors/:id/approve', authenticateToken, async (req, res, next)
       [approvedStatus, req.user.id, admin_notes || null, req.params.id]
     );
 
-    // Update user account to active if approved, inactive if rejected
+    // Instructors can always sign in; keep account active regardless of approval outcome.
     await db.run(
-      `UPDATE users SET is_active = ? WHERE id = ?`,
-      [approved ? 1 : 0, instructor.user_id]
+      `UPDATE users SET is_active = 1 WHERE id = ?`,
+      [instructor.user_id]
     );
 
     await logAction(req.user.id, approved ? 'approve_instructor' : 'reject_instructor', 'academy', req.params.id, { approved }, req);

@@ -7,6 +7,7 @@ const { logAction } = require('../utils/audit');
 const { sendOTP, sendPasswordReset } = require('../utils/email');
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const { attachAcademyContext, ACADEMY_DEPARTMENT_PATTERN, ACADEMY_HEAD_EMAILS } = require('../utils/academyPermissions');
+const { findUserByLoginId } = require('../utils/emailNormalize');
 const crypto = require('crypto');
 
 // Generate OTP
@@ -41,20 +42,10 @@ router.post('/login', [
 
     const { email, password } = req.body;
 
-    const loginId = (email || '').toLowerCase().trim();
+    const loginId = (email || '').trim();
     console.log('Login attempt for:', loginId);
 
-    let user = await db.get(
-      'SELECT id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1',
-      [loginId]
-    );
-
-    if (!user) {
-      user = await db.get(
-        'SELECT id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified FROM users WHERE LOWER(TRIM(username)) = ? LIMIT 1',
-        [loginId]
-      );
-    }
+    let user = await findUserByLoginId(db, loginId);
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email/username or password' });

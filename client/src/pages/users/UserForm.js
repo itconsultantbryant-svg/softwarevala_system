@@ -176,7 +176,9 @@ const UserForm = ({ user, onClose }) => {
                 <div className="mb-3">
                   <label className="form-label">Password</label>
                   <input type="password" className="form-control" name="password" value={formData.password} onChange={handleChange} placeholder="Leave empty for default password" />
-                  <small className="form-text text-muted">Default: User@123</small>
+                  <small className="form-text text-muted">
+                    Default: {formData.role === 'Instructor' ? 'Instructor@123' : formData.role === 'Student' ? 'Student@123' : 'User@123'}
+                  </small>
                 </div>
               )}
             </div>

@@ -2454,6 +2454,14 @@ async function initializeDatabase() {
       console.error('Warning: Could not fix student accounts:', studentFixError.message);
     }
 
+    // === Fix instructor login accounts (production) ===
+    try {
+      const { ensureInstructorLoginAccounts } = require('./utils/ensureInstructorAccounts');
+      await ensureInstructorLoginAccounts();
+    } catch (instructorFixError) {
+      console.error('Warning: Could not fix instructor accounts:', instructorFixError.message);
+    }
+
   } catch (error) {
     console.error('Database initialization error:', error);
     console.error('Error stack:', error.stack);

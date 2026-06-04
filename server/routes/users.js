@@ -5,6 +5,8 @@ const db = require('../config/database');
 const { authenticateToken, requireRole } = require('../utils/auth');
 const { hashPassword } = require('../utils/auth');
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
+const { normalizeAccountEmail } = require('../utils/emailNormalize');
+const { generateInstructorId } = require('../utils/academyIds');
 const { logAction } = require('../utils/audit');
 
 // Get all users (Admin, DepartmentHead, and Staff can access for requisitions, meetings, etc.)
@@ -81,24 +83,33 @@ router.post('/', authenticateToken, requireRole('Admin'), [
 
     const { email, name, username, phone, role, password, is_active, profile_image } = req.body;
     const normalizedProfileImage = normalizeProfileImage(profile_image) ?? null;
+    const normEmail = normalizeAccountEmail(email);
+    if (!normEmail) {
+      return res.status(400).json({ error: 'A valid email address is required.' });
+    }
 
     // Check if user exists
-    const existingUser = await db.get('SELECT id FROM users WHERE email = ?', [email]);
+    const existingUser = await db.get(
+      'SELECT id FROM users WHERE LOWER(TRIM(email)) = ?',
+      [normEmail]
+    );
     if (existingUser) {
       return res.status(400).json({ error: 'User with this email already exists' });
     }
 
-    // Generate password if not provided
-    const defaultPassword = password || 'User@123';
+    const defaultPassword =
+      password ||
+      (role === 'Instructor' ? 'Instructor@123' : role === 'Student' ? 'Student@123' : 'User@123');
     const passwordHash = await hashPassword(defaultPassword);
+    const usernameToStore = (username || normEmail.split('@')[0]).trim();
 
     // Create user
     const result = await db.run(
       `INSERT INTO users (email, username, password_hash, role, name, phone, profile_image, is_active, email_verified)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        email,
-        username || email.split('@')[0],
+        normEmail,
+        usernameToStore,
         passwordHash,
         role,
         name,
@@ -108,6 +119,14 @@ router.post('/', authenticateToken, requireRole('Admin'), [
         1
       ]
     );
+
+    if (role === 'Instructor') {
+      await db.run(
+        `INSERT INTO instructors (user_id, instructor_id, approved, created_at, updated_at)
+         VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [result.lastID, generateInstructorId()]
+      );
+    }
 
     await logAction(req.user.id, 'create_user', 'users', result.lastID, { email, role }, req);
 

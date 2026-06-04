@@ -82,7 +82,7 @@ async function approveInstructorRecord(instructorId, approverUserId, approved, a
     `UPDATE instructors SET approved = ?, approved_by = ?, approved_at = CURRENT_TIMESTAMP, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
     [approvedStatus, approverUserId, adminNotes || null, instructorId]
   );
-  await db.run('UPDATE users SET is_active = ? WHERE id = ?', [approved ? 1 : 0, instructor.user_id]);
+  await db.run('UPDATE users SET is_active = 1 WHERE id = ?', [instructor.user_id]);
   return { ok: true, id: instructorId };
 }
 
