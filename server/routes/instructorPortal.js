@@ -9,10 +9,12 @@ const {
   getInstructorByUserId,
   instructorOwnsCourse,
   getInstructorCourses,
+  getCohortsForInstructor,
   getStudentsForCourse,
   getStudentsForInstructor,
   notifyEnrolledStudents,
-  isInstructorApproved
+  isInstructorApproved,
+  parseCohortId
 } = require('../utils/instructorHelpers');
 const { parseGradeSubmissionInput, GRADE_SELECT_COLUMNS } = require('../utils/gradeTemplate');
 
@@ -53,17 +55,23 @@ async function requireCourseAccess(req, res, next) {
 // GET /instructors/me — profile + stats
 router.get('/me', authenticateToken, requireRole('Instructor'), requireInstructor, async (req, res) => {
   try {
+    const cohortId = parseCohortId(req.query.cohort_id);
     const courses = await getInstructorCourses(req.instructor);
-    const students = await getStudentsForInstructor(req.instructor);
-    const gradeStats = await db.get(
-      `SELECT
+    const students = await getStudentsForInstructor(req.instructor, cohortId);
+    let gradeSql = `
+      SELECT
          SUM(CASE WHEN g.status = 'Pending' THEN 1 ELSE 0 END) as pending,
          SUM(CASE WHEN g.status = 'Approved' THEN 1 ELSE 0 END) as approved,
          SUM(CASE WHEN g.status = 'Rejected' THEN 1 ELSE 0 END) as rejected
        FROM grade_submissions g
-       WHERE g.submitted_by = ?`,
-      [req.user.id]
-    );
+       JOIN students s ON g.student_id = s.id
+       WHERE g.submitted_by = ?`;
+    const gradeParams = [req.user.id];
+    if (cohortId != null) {
+      gradeSql += ' AND s.cohort_id = ?';
+      gradeParams.push(cohortId);
+    }
+    const gradeStats = await db.get(gradeSql, gradeParams);
     res.json({
       instructor: {
         id: req.instructor.id,
@@ -90,6 +98,16 @@ router.get('/me', authenticateToken, requireRole('Instructor'), requireInstructo
   }
 });
 
+router.get('/me/cohorts', authenticateToken, requireRole('Instructor'), requireInstructor, async (req, res) => {
+  try {
+    const cohorts = await getCohortsForInstructor(req.instructor);
+    res.json({ cohorts });
+  } catch (e) {
+    console.error('Instructor cohorts error:', e);
+    res.status(500).json({ error: 'Failed to fetch cohorts' });
+  }
+});
+
 router.get('/me/courses', authenticateToken, requireRole('Instructor'), requireInstructor, async (req, res) => {
   try {
     const courses = await getInstructorCourses(req.instructor);
@@ -102,7 +120,8 @@ router.get('/me/courses', authenticateToken, requireRole('Instructor'), requireI
 
 router.get('/me/students', authenticateToken, requireRole('Instructor'), requireInstructor, async (req, res) => {
   try {
-    const students = await getStudentsForInstructor(req.instructor);
+    const cohortId = parseCohortId(req.query.cohort_id);
+    const students = await getStudentsForInstructor(req.instructor, cohortId);
     res.json({ students });
   } catch (e) {
     console.error('Instructor students error:', e);
@@ -112,24 +131,31 @@ router.get('/me/students', authenticateToken, requireRole('Instructor'), require
 
 router.get('/me/grade-submissions', authenticateToken, requireRole('Instructor'), requireInstructor, async (req, res) => {
   try {
-    const rows = await db.all(
-      `SELECT g.id, g.student_id, g.course_id, g.proposed_grade, g.status, g.created_at,
+    const cohortId = parseCohortId(req.query.cohort_id);
+    let sql = `
+      SELECT g.id, g.student_id, g.course_id, g.proposed_grade, g.status, g.created_at,
               g.endorsed_by, g.endorsed_at, g.approved_by, g.approved_at, g.notes,
               ${GRADE_SELECT_COLUMNS},
-              s.student_id as student_code, u.name as student_name,
+              s.student_id as student_code, s.cohort_id, u.name as student_name,
+              ch.name as cohort_name,
               c.course_code, c.title as course_title,
               endr.name as endorsed_by_name,
               appr.name as approved_by_name
        FROM grade_submissions g
        JOIN students s ON g.student_id = s.id
        JOIN users u ON s.user_id = u.id
+       LEFT JOIN cohorts ch ON ch.id = s.cohort_id
        JOIN courses c ON g.course_id = c.id
        LEFT JOIN users endr ON g.endorsed_by = endr.id
        LEFT JOIN users appr ON g.approved_by = appr.id
-       WHERE g.submitted_by = ?
-       ORDER BY g.created_at DESC`,
-      [req.user.id]
-    );
+       WHERE g.submitted_by = ?`;
+    const params = [req.user.id];
+    if (cohortId != null) {
+      sql += ' AND s.cohort_id = ?';
+      params.push(cohortId);
+    }
+    sql += ' ORDER BY g.created_at DESC';
+    const rows = await db.all(sql, params);
     res.json({ submissions: rows });
   } catch (e) {
     console.error('Instructor grade submissions error:', e);
@@ -174,7 +200,8 @@ router.post(
     try {
       const errs = validationResult(req);
       if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-      const { link_url, title, platform } = req.body;
+      const { link_url, title, platform, cohort_id } = req.body;
+      const cohortId = parseCohortId(cohort_id);
       const run = await db.run(
         `INSERT INTO course_class_links (course_id, title, link_url, platform, instructor_id, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
@@ -195,7 +222,7 @@ router.post(
         type: 'info',
         link: '/student/class-links',
         senderId: req.user.id
-      });
+      }, { cohortId });
       res.status(201).json({ message: 'Class link added', id: run.lastID });
     } catch (e) {
       console.error('Create class link error:', e);
@@ -263,7 +290,8 @@ router.post(
     try {
       const errs = validationResult(req);
       if (!errs.isEmpty()) return res.status(400).json({ errors: errs.array() });
-      const { title, description, due_date, link_url } = req.body;
+      const { title, description, due_date, link_url, cohort_id } = req.body;
+      const cohortId = parseCohortId(cohort_id);
       const run = await db.run(
         `INSERT INTO course_assignments (course_id, title, description, due_date, link_url, instructor_id, created_by, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
@@ -277,7 +305,7 @@ router.post(
         type: 'info',
         link: '/student/materials',
         senderId: req.user.id
-      });
+      }, { cohortId });
       res.status(201).json({ message: 'Assignment posted', id: run.lastID });
     } catch (e) {
       console.error('Create assignment error:', e);
@@ -317,7 +345,8 @@ router.get(
   async (req, res) => {
     try {
       const sessionDate = req.query.date || new Date().toISOString().slice(0, 10);
-      const students = await getStudentsForCourse(req.courseId);
+      const cohortId = parseCohortId(req.query.cohort_id);
+      const students = await getStudentsForCourse(req.courseId, cohortId);
       const marks = await db.all(
         `SELECT student_id, status, notes FROM student_attendance
          WHERE course_id = ? AND session_date = ?`,

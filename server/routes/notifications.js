@@ -352,7 +352,36 @@ router.get('/:id/thread', authenticateToken, async (req, res) => {
 // Get all users for notification sending (All authenticated users)
 router.get('/users', authenticateToken, async (req, res) => {
   try {
-    const { role, search } = req.query;
+    const { role, search, cohort_id } = req.query;
+
+    if (req.user.role === 'Instructor') {
+      const { getInstructorByUserId, getStudentsForInstructor, parseCohortId } = require('../utils/instructorHelpers');
+      const instructor = await getInstructorByUserId(req.user.id);
+      if (!instructor) {
+        return res.json({ users: [] });
+      }
+      const cohortId = parseCohortId(cohort_id);
+      const students = await getStudentsForInstructor(instructor, cohortId);
+      const userIds = [...new Set(students.map((s) => s.user_id).filter(Boolean))];
+      if (userIds.length === 0) {
+        return res.json({ users: [] });
+      }
+      const placeholders = userIds.map(() => '?').join(',');
+      let query = `
+        SELECT id, email, name, role, is_active
+        FROM users
+        WHERE is_active = 1 AND id IN (${placeholders})`;
+      const params = [...userIds];
+      if (search) {
+        query += ' AND (name LIKE ? OR email LIKE ?)';
+        const searchTerm = `%${search}%`;
+        params.push(searchTerm, searchTerm);
+      }
+      query += ' ORDER BY name ASC';
+      const users = await db.all(query, params);
+      return res.json({ users: users.filter((u) => u.id !== req.user.id) });
+    }
+
     let query = `
       SELECT id, email, name, role, is_active
       FROM users

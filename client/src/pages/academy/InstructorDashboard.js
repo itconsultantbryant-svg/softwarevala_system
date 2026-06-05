@@ -23,6 +23,8 @@ const gradeStatusBadge = (row) => {
 const InstructorDashboard = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('overview');
+  const [cohorts, setCohorts] = useState([]);
+  const [selectedCohortId, setSelectedCohortId] = useState('');
   const [profile, setProfile] = useState(null);
   const [stats, setStats] = useState({});
   const [courses, setCourses] = useState([]);
@@ -56,19 +58,36 @@ const InstructorDashboard = () => {
     return students.filter((s) => String(s.course_id) === String(gradeForm.course_id));
   }, [students, gradeForm.course_id]);
 
-  const loadCore = useCallback(async () => {
+  const cohortQueryParams = useMemo(
+    () => (selectedCohortId ? { cohort_id: selectedCohortId } : {}),
+    [selectedCohortId]
+  );
+
+  const selectedCohortLabel = useMemo(() => {
+    if (!selectedCohortId) return null;
+    const c = cohorts.find((ch) => String(ch.id) === String(selectedCohortId));
+    return c ? (c.name || c.code || `Cohort #${c.id}`) : null;
+  }, [selectedCohortId, cohorts]);
+
+  const loadCore = useCallback(async (cohortId = '') => {
     setError('');
+    const params = cohortId ? { cohort_id: cohortId } : {};
     const [meRes, coursesRes, studentsRes, subsRes] = await Promise.all([
-      api.get('/academy/instructor-portal/me'),
+      api.get('/academy/instructor-portal/me', { params }),
       api.get('/academy/instructor-portal/me/courses'),
-      api.get('/academy/instructor-portal/me/students'),
-      api.get('/academy/instructor-portal/me/grade-submissions')
+      api.get('/academy/instructor-portal/me/students', { params }),
+      api.get('/academy/instructor-portal/me/grade-submissions', { params })
     ]);
     setProfile(meRes.data.instructor);
     setStats(meRes.data.stats || {});
     setCourses(coursesRes.data.courses || []);
     setStudents(studentsRes.data.students || []);
     setSubmissions(subsRes.data.submissions || []);
+  }, []);
+
+  const loadCohorts = useCallback(async () => {
+    const res = await api.get('/academy/instructor-portal/me/cohorts');
+    setCohorts(res.data.cohorts || []);
   }, []);
 
   const loadLinks = useCallback(async () => {
@@ -85,7 +104,8 @@ const InstructorDashboard = () => {
     (async () => {
       setLoading(true);
       try {
-        await loadCore();
+        await loadCohorts();
+        await loadCore(selectedCohortId);
         await Promise.all([loadLinks(), loadAssignments()]);
       } catch (err) {
         setError(err.response?.data?.error || 'Failed to load instructor portal');
@@ -93,14 +113,32 @@ const InstructorDashboard = () => {
         setLoading(false);
       }
     })();
-  }, [loadCore, loadLinks, loadAssignments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    (async () => {
+      try {
+        await loadCore(selectedCohortId);
+      } catch (err) {
+        setError(err.response?.data?.error || 'Failed to refresh portal data');
+      }
+    })();
+  }, [selectedCohortId, loadCore, loading]);
+
+  const handleCohortChange = (cohortId) => {
+    setSelectedCohortId(cohortId);
+    setGradeForm({ student_id: '', course_id: '', scores: { ...EMPTY_GRADE_SCORES } });
+    setAttendanceRoster([]);
+  };
 
   const loadAttendance = async () => {
     if (!attendanceCourseId) return;
     setAttendanceLoading(true);
     try {
       const res = await api.get(`/academy/instructor-portal/me/courses/${attendanceCourseId}/attendance`, {
-        params: { date: attendanceDate }
+        params: { date: attendanceDate, ...cohortQueryParams }
       });
       setAttendanceRoster(
         (res.data.roster || []).map((r) => ({
@@ -120,7 +158,7 @@ const InstructorDashboard = () => {
       loadAttendance();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, attendanceCourseId, attendanceDate]);
+  }, [activeTab, attendanceCourseId, attendanceDate, cohortQueryParams]);
 
   const selectedStudent = useMemo(
     () => studentsForCourse.find((s) => String(s.id) === String(gradeForm.student_id)),
@@ -144,7 +182,7 @@ const InstructorDashboard = () => {
       );
       setMessage('Grade submitted for coordinator review.');
       setGradeForm({ student_id: '', course_id: '', scores: { ...EMPTY_GRADE_SCORES } });
-      await loadCore();
+      await loadCore(selectedCohortId);
       setActiveTab('grades');
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to submit grade');
@@ -158,8 +196,15 @@ const InstructorDashboard = () => {
     if (!linkForm.course_id || !linkForm.link_url) return;
     setLinkSaving(true);
     try {
-      await api.post(`/academy/instructor-portal/me/courses/${linkForm.course_id}/class-links`, linkForm);
-      setMessage('Class link posted. Enrolled students have been notified.');
+      await api.post(`/academy/instructor-portal/me/courses/${linkForm.course_id}/class-links`, {
+        ...linkForm,
+        ...(selectedCohortId ? { cohort_id: selectedCohortId } : {})
+      });
+      setMessage(
+        selectedCohortId
+          ? 'Class link posted. Students in the selected cohort have been notified.'
+          : 'Class link posted. Enrolled students have been notified.'
+      );
       setLinkForm({ course_id: '', title: '', link_url: '', platform: 'Zoom' });
       await loadLinks();
     } catch (err) {
@@ -184,8 +229,15 @@ const InstructorDashboard = () => {
     if (!assignForm.course_id || !assignForm.title) return;
     setAssignSaving(true);
     try {
-      await api.post(`/academy/instructor-portal/me/courses/${assignForm.course_id}/assignments`, assignForm);
-      setMessage('Material / assignment posted. Students have been notified.');
+      await api.post(`/academy/instructor-portal/me/courses/${assignForm.course_id}/assignments`, {
+        ...assignForm,
+        ...(selectedCohortId ? { cohort_id: selectedCohortId } : {})
+      });
+      setMessage(
+        selectedCohortId
+          ? 'Material posted. Students in the selected cohort have been notified.'
+          : 'Material / assignment posted. Students have been notified.'
+      );
       setAssignForm({ course_id: '', title: '', description: '', due_date: '', link_url: '' });
       await loadAssignments();
     } catch (err) {
@@ -255,16 +307,50 @@ const InstructorDashboard = () => {
   return (
     <div className="instructor-dashboard container-fluid py-3">
       <div className="instructor-dashboard__hero card border-0 shadow-sm mb-3">
-        <div className="card-body d-flex flex-wrap justify-content-between align-items-center gap-3">
-          <div>
-            <h1 className="h4 mb-1">Lecturer Portal</h1>
-            <p className="text-muted mb-0 small">
-              Welcome, {profile?.name || user?.name}. Manage grades, class links, materials, and attendance.
-            </p>
+        <div className="card-body">
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+            <div>
+              <h1 className="h4 mb-1">Lecturer Portal</h1>
+              <p className="text-muted mb-0 small">
+                Welcome, {profile?.name || user?.name}. Manage grades, class links, materials, and attendance.
+              </p>
+            </div>
+            <Link
+              to={selectedCohortId ? `/communications?cohort_id=${selectedCohortId}` : '/communications'}
+              className="btn btn-outline-primary btn-sm"
+            >
+              <i className="bi bi-chat-dots me-1" /> Message students
+            </Link>
           </div>
-          <Link to="/communications" className="btn btn-outline-primary btn-sm">
-            <i className="bi bi-chat-dots me-1" /> Message students
-          </Link>
+          <div className="row g-2 align-items-end">
+            <div className="col-md-5 col-lg-4">
+              <label className="form-label small fw-semibold mb-1">
+                <i className="bi bi-funnel me-1" /> Cohort filter
+              </label>
+              <select
+                className="form-select form-select-sm"
+                value={selectedCohortId}
+                onChange={(e) => handleCohortChange(e.target.value)}
+              >
+                <option value="">All cohorts</option>
+                {cohorts.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}{c.code ? ` (${c.code})` : ''}{c.period ? ` — ${c.period}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedCohortId && (
+              <div className="col-md-7 col-lg-8">
+                <span className="badge bg-primary-subtle text-primary border border-primary-subtle">
+                  Showing students in: <strong>{selectedCohortLabel || 'Selected cohort'}</strong>
+                </span>
+                <span className="text-muted small ms-2">
+                  Grades, attendance, links, and materials apply to this cohort only.
+                </span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -352,13 +438,16 @@ const InstructorDashboard = () => {
       {activeTab === 'students' && (
         <div className="card"><div className="card-body table-responsive">
           <table className="table table-hover mb-0">
-            <thead><tr><th>Student</th><th>ID</th><th>Course</th><th>Email</th><th>Status</th></tr></thead>
+            <thead><tr><th>Student</th><th>ID</th><th>Cohort</th><th>Course</th><th>Email</th><th>Status</th></tr></thead>
             <tbody>
               {students.length === 0 ? (
-                <tr><td colSpan={5} className="text-muted">No students in your courses.</td></tr>
+                <tr><td colSpan={6} className="text-muted">
+                  {selectedCohortId ? 'No students in this cohort for your courses.' : 'No students in your courses.'}
+                </td></tr>
               ) : students.map((s, idx) => (
                 <tr key={`${s.id}-${s.course_id}-${idx}`}>
                   <td>{s.name}</td><td>{s.student_code}</td>
+                  <td>{s.cohort_name || '—'}</td>
                   <td>{s.course_code} — {s.course_title}</td><td>{s.email}</td>
                   <td>{s.enrollment_status}</td>
                 </tr>
@@ -389,6 +478,11 @@ const InstructorDashboard = () => {
                       onChange={(e) => setGradeForm((f) => ({ ...f, student_id: e.target.value }))}
                       disabled={!gradeForm.course_id || isPending}>
                       <option value="">Select student</option>
+                      {studentsForCourse.length === 0 && gradeForm.course_id ? (
+                        <option value="" disabled>
+                          {selectedCohortId ? 'No students in this cohort for this course' : 'No students enrolled'}
+                        </option>
+                      ) : null}
                       {studentsForCourse.map((s) => (
                         <option key={s.id} value={s.id}>{s.name} ({s.student_code})</option>
                       ))}
@@ -414,17 +508,18 @@ const InstructorDashboard = () => {
               <table className="table table-sm mb-0">
                 <thead>
                   <tr>
-                    <th>Student</th><th>Course</th>
+                    <th>Student</th><th>Course</th><th>Cohort</th>
                     <th>Asgn</th><th>Att</th><th>Pres</th><th>Assess</th><th>Proj</th><th>Exam</th>
                     <th>Avg</th><th>Letter</th><th>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {submissions.length === 0 ? (
-                    <tr><td colSpan={11} className="text-muted">No submissions yet.</td></tr>
+                    <tr><td colSpan={12} className="text-muted">No submissions yet.</td></tr>
                   ) : submissions.map((g) => (
                     <tr key={g.id}>
                       <td>{g.student_name}</td><td>{g.course_code}</td>
+                      <td>{g.cohort_name || '—'}</td>
                       <td>{g.score_assignment ?? '—'}</td><td>{g.score_attendance ?? '—'}</td>
                       <td>{g.score_presentation ?? '—'}</td><td>{g.score_assessment ?? '—'}</td>
                       <td>{g.score_project ?? '—'}</td><td>{g.score_final_exam ?? '—'}</td>
@@ -470,7 +565,7 @@ const InstructorDashboard = () => {
                     onChange={(e) => setLinkForm((f) => ({ ...f, link_url: e.target.value }))} disabled={isPending} />
                 </div>
                 <button type="submit" className="btn btn-primary w-100" disabled={linkSaving || isPending}>
-                  {linkSaving ? 'Posting…' : 'Post link & notify students'}
+                  {linkSaving ? 'Posting…' : selectedCohortId ? 'Post link & notify cohort' : 'Post link & notify students'}
                 </button>
               </form>
             </div></div>
@@ -530,7 +625,7 @@ const InstructorDashboard = () => {
                     onChange={(e) => setAssignForm((f) => ({ ...f, link_url: e.target.value }))} disabled={isPending} />
                 </div>
                 <button type="submit" className="btn btn-primary w-100" disabled={assignSaving || isPending}>
-                  {assignSaving ? 'Posting…' : 'Post & notify students'}
+                  {assignSaving ? 'Posting…' : selectedCohortId ? 'Post & notify cohort' : 'Post & notify students'}
                 </button>
               </form>
             </div></div>
@@ -579,15 +674,23 @@ const InstructorDashboard = () => {
               </button>
             </div>
           </div>
+          {attendanceCourseId && !attendanceLoading && attendanceRoster.length === 0 && (
+            <p className="text-muted mb-0">
+              {selectedCohortId
+                ? 'No students in this cohort are enrolled in the selected course.'
+                : 'No enrolled students for this course.'}
+            </p>
+          )}
           {attendanceRoster.length > 0 && (
             <>
               <div className="table-responsive">
                 <table className="table table-sm">
-                  <thead><tr><th>Student</th><th>ID</th><th>Status</th></tr></thead>
+                  <thead><tr><th>Student</th><th>ID</th><th>Cohort</th><th>Status</th></tr></thead>
                   <tbody>
                     {attendanceRoster.map((r) => (
                       <tr key={r.id}>
                         <td>{r.name}</td><td>{r.student_code}</td>
+                        <td>{r.cohort_name || '—'}</td>
                         <td>
                           <select className="form-select form-select-sm" value={r.status}
                             onChange={(e) => setAttendanceRoster((prev) => prev.map((x) => x.id === r.id ? { ...x, status: e.target.value } : x))}

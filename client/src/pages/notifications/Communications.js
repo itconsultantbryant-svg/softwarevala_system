@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import { initSocket, getSocket } from '../../config/socket';
@@ -7,6 +8,8 @@ import RecipientSelector from '../../components/RecipientSelector';
 
 const Communications = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const cohortIdFromUrl = searchParams.get('cohort_id') || '';
   const [notifications, setNotifications] = useState([]);
   const [selectedNotification, setSelectedNotification] = useState(null);
   const [thread, setThread] = useState(null);
@@ -58,7 +61,7 @@ const Communications = () => {
         socket.off('notification_acknowledged');
       };
     }
-  }, [user, selectedNotification]);
+  }, [user, selectedNotification, cohortIdFromUrl]);
 
   const fetchNotifications = async () => {
     try {
@@ -85,7 +88,11 @@ const Communications = () => {
 
   const fetchAvailableUsers = async () => {
     try {
-      const response = await api.get('/notifications/users');
+      const params = {};
+      if (user?.role === 'Instructor' && cohortIdFromUrl) {
+        params.cohort_id = cohortIdFromUrl;
+      }
+      const response = await api.get('/notifications/users', { params });
       const usersData = response.data?.users || response.data || [];
       const filteredUsers = Array.isArray(usersData) ? usersData.filter(u => u.id !== user?.id) : [];
       setAvailableUsers(filteredUsers);
@@ -282,7 +289,12 @@ const Communications = () => {
         <div className="col-12 d-flex justify-content-between align-items-center">
           <div>
             <h1 className="h3 mb-0">Communications</h1>
-            <p className="text-muted">View and reply to your communications</p>
+            <p className="text-muted mb-0">View and reply to your communications</p>
+            {user?.role === 'Instructor' && cohortIdFromUrl && (
+              <span className="badge bg-primary-subtle text-primary border border-primary-subtle mt-1">
+                Recipients limited to students in the selected cohort
+              </span>
+            )}
           </div>
           <button
             className="btn btn-primary"
