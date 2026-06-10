@@ -72,6 +72,33 @@ function decodeDataUrl(dataUrl) {
   }
 }
 
+function certificateRecordHasFile(cert) {
+  if (!cert) return false;
+  const abs = resolveCertificateAbsoluteDiskPath(cert);
+  if (abs && fs.existsSync(abs)) return true;
+  if (cert.file_data_url) {
+    const decoded = decodeDataUrl(cert.file_data_url);
+    return !!(decoded && decoded.buffer && decoded.buffer.length);
+  }
+  if (cert.has_stored_blob) return true;
+  return false;
+}
+
+async function hydrateCertificateFileRecord(db, cert) {
+  if (!db || !cert?.id) return cert;
+  const needsHydrate =
+    !cert.file_data_url &&
+    !resolveCertificateAbsoluteDiskPath(cert);
+  if (!needsHydrate) return cert;
+
+  const extra = await db.get(
+    `SELECT file_data_url, file_path, pdf_path, certificate_id, file_type
+     FROM certificates WHERE id = ?`,
+    [cert.id]
+  );
+  return extra ? { ...cert, ...extra } : cert;
+}
+
 function sendCertificateDataUrlResponse(res, dataUrl, friendlyCertificateId) {
   const decoded = decodeDataUrl(dataUrl);
   if (!decoded || !decoded.buffer) {
@@ -97,9 +124,9 @@ function sendCertificateDataUrlResponse(res, dataUrl, friendlyCertificateId) {
   res.send(buffer);
 }
 
-function sendCertificateFileResponse(res, absDiskPath, friendlyCertificateId) {
+function sendCertificateFileResponse(res, absDiskPath, friendlyCertificateId, options = {}) {
   if (!absDiskPath || !fs.existsSync(absDiskPath)) {
-    res.status(404).json({ error: 'Certificate file not found on server' });
+    res.status(404).json({ error: options.notFoundMessage || 'Certificate file not found on server' });
     return;
   }
 
@@ -118,28 +145,31 @@ function sendCertificateFileResponse(res, absDiskPath, friendlyCertificateId) {
 
   const absolute = path.resolve(absDiskPath);
   res.setHeader('Content-Type', mime);
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const disposition = options.inline ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
 
   res.sendFile(absolute);
 }
 
 /**
- * Serve certificate bytes: prefer on-disk file (fast), fall back to legacy DB data URL only.
- * @param {object} cert — needs certificate_id, file_path/pdf_path/resolved_file_path, optional file_data_url
+ * Serve certificate bytes: prefer on-disk file (fast), fall back to legacy DB data URL.
  */
 async function deliverCertificateBinary(res, db, cert, options = {}) {
   const notFoundMessage = options.notFoundMessage || 'Certificate file not found on server';
+  const inline = !!options.inline;
 
-  const absDiskPath = resolveCertificateAbsoluteDiskPath(cert);
+  let record = await hydrateCertificateFileRecord(db, cert);
+
+  const absDiskPath = resolveCertificateAbsoluteDiskPath(record);
   if (absDiskPath && fs.existsSync(absDiskPath)) {
-    sendCertificateFileResponse(res, absDiskPath, cert.certificate_id);
+    sendCertificateFileResponse(res, absDiskPath, record.certificate_id, { inline, notFoundMessage });
     return;
   }
 
-  if (cert.file_data_url) {
-    const decoded = decodeDataUrl(cert.file_data_url);
+  if (record.file_data_url) {
+    const decoded = decodeDataUrl(record.file_data_url);
     if (decoded && decoded.buffer && decoded.buffer.length) {
-      sendCertificateDataUrlResponse(res, cert.file_data_url, cert.certificate_id);
+      sendCertificateDataUrlResponse(res, record.file_data_url, record.certificate_id);
       return;
     }
   }
@@ -150,5 +180,7 @@ async function deliverCertificateBinary(res, db, cert, options = {}) {
 module.exports = {
   toPublicCertificatePath,
   resolveCertificateAbsoluteDiskPath,
+  certificateRecordHasFile,
+  hydrateCertificateFileRecord,
   deliverCertificateBinary
 };

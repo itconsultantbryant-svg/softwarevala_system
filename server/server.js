@@ -156,6 +156,10 @@ const entityImagesDir = path.join(uploadsRoot, 'entity-images');
 if (!fs.existsSync(entityImagesDir)) {
   fs.mkdirSync(entityImagesDir, { recursive: true });
 }
+const certificatesUploadDir = path.join(uploadsRoot, 'certificates');
+if (!fs.existsSync(certificatesUploadDir)) {
+  fs.mkdirSync(certificatesUploadDir, { recursive: true });
+}
 
 // Serve uploaded files
 app.use('/uploads', express.static(uploadsRoot));

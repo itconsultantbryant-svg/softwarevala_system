@@ -8,7 +8,8 @@ const { sendBulkNotifications, sendNotificationToUser, sendNotificationToRole } 
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const { normalizeAccountEmail } = require('../utils/emailNormalize');
 const { resolveUploadsDiskPath } = require('../utils/uploadsRoot');
-const { deliverCertificateBinary } = require('../utils/certificateFileDelivery');
+const { deliverCertificateBinary, certificateRecordHasFile } = require('../utils/certificateFileDelivery');
+const { isCertificateWindowOpenForCohort } = require('../utils/certificateAccess');
 const {
   generateInstructorId,
   resolveStudentId,
@@ -30,21 +31,6 @@ const path = require('path');
 // Generate unique certificate ID
 function generateCertificateId() {
   return 'CERT-' + Date.now().toString().slice(-8) + '-' + crypto.randomBytes(4).toString('hex').toUpperCase();
-}
-
-function isCertificateWindowOpenForCohort(row) {
-  const enabled = Number(row?.cert_access_enabled || 0) === 1;
-  if (!enabled) return false;
-  const now = new Date();
-  if (row?.cert_access_start) {
-    const start = new Date(row.cert_access_start);
-    if (now < start) return false;
-  }
-  if (row?.cert_access_end) {
-    const end = new Date(row.cert_access_end);
-    if (now > end) return false;
-  }
-  return true;
 }
 
 // Academy staff: Admin, dept head, instructor, or staff with assigned / legacy academy permissions
@@ -372,18 +358,21 @@ router.get('/students/me/certificates', authenticateToken, requireRole('Student'
   try {
     const student = await getCurrentStudent(req);
     if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
-    const cohort = await db.get(
-      'SELECT cert_access_enabled, cert_access_start, cert_access_end FROM cohorts WHERE id = ?',
-      [student.cohort_id || null]
-    );
-    if (!cohort || !isCertificateWindowOpenForCohort(cohort)) {
-      return res.status(403).json({
-        error: 'Certificate access for your cohort is currently closed. Please contact Academy administration.'
-      });
+    if (student.cohort_id) {
+      const cohort = await db.get(
+        'SELECT cert_access_enabled, cert_access_start, cert_access_end FROM cohorts WHERE id = ?',
+        [student.cohort_id]
+      );
+      if (cohort && !isCertificateWindowOpenForCohort({ ...cohort, cohort_id: student.cohort_id })) {
+        return res.status(403).json({
+          error: 'Certificate access for your cohort is currently closed. Please contact Academy administration.'
+        });
+      }
     }
     const certs = await db.all(
       `SELECT c.id, c.certificate_id, c.course_id, c.issue_date, c.grade, c.verification_code,
-              COALESCE(c.file_path, c.pdf_path) as file_path,
+              COALESCE(c.file_path, c.pdf_path) as file_path, c.pdf_path,
+              (CASE WHEN c.file_data_url IS NOT NULL AND LENGTH(TRIM(c.file_data_url)) > 0 THEN 1 ELSE 0 END) as has_stored_blob,
               co.course_code, co.title as course_title
        FROM certificates c
        JOIN courses co ON c.course_id = co.id
@@ -393,7 +382,8 @@ router.get('/students/me/certificates', authenticateToken, requireRole('Student'
     );
     const withUrls = certs.map((cert) => ({
       ...cert,
-      download_url: cert.file_path
+      file_available: certificateRecordHasFile(cert),
+      download_url: certificateRecordHasFile(cert)
         ? `/academy/students/me/certificates/${cert.id}/download`
         : null
     }));
@@ -409,17 +399,21 @@ router.get('/students/me/certificates/:id/download', authenticateToken, requireR
   try {
     const student = await getCurrentStudent(req);
     if (!student) return res.status(404).json({ error: 'Student record not found or not approved' });
-    const cohort = await db.get(
-      'SELECT cert_access_enabled, cert_access_start, cert_access_end FROM cohorts WHERE id = ?',
-      [student.cohort_id || null]
-    );
-    if (!cohort || !isCertificateWindowOpenForCohort(cohort)) {
-      return res.status(403).json({
-        error: 'Certificate access for your cohort is currently closed. Please contact Academy administration.'
-      });
+    if (student.cohort_id) {
+      const cohort = await db.get(
+        'SELECT cert_access_enabled, cert_access_start, cert_access_end FROM cohorts WHERE id = ?',
+        [student.cohort_id]
+      );
+      if (cohort && !isCertificateWindowOpenForCohort({ ...cohort, cohort_id: student.cohort_id })) {
+        return res.status(403).json({
+          error: 'Certificate access for your cohort is currently closed. Please contact Academy administration.'
+        });
+      }
     }
     const cert = await db.get(
-      'SELECT id, certificate_id, COALESCE(file_path, pdf_path) as file_path, file_data_url, student_id FROM certificates WHERE id = ? AND student_id = ?',
+      `SELECT id, certificate_id, file_path, pdf_path, file_data_url, student_id,
+              COALESCE(file_path, pdf_path) as resolved_file_path
+       FROM certificates WHERE id = ? AND student_id = ?`,
       [req.params.id, student.id]
     );
     if (!cert) return res.status(404).json({ error: 'Certificate not found' });
@@ -1637,67 +1631,11 @@ router.get('/students/:id/enrolled-courses', authenticateToken, async (req, res)
 
 // ========== CERTIFICATES ==========
 
-// Create certificate
-router.post('/certificates', authenticateToken, requireRole('Admin', 'Instructor'), [
-  body('student_id').isInt(),
-  body('course_id').isInt(),
-  body('grade').trim().notEmpty()
-], async (req, res) => {
-  try {
-    const { student_id, course_id, grade, issue_date } = req.body;
-
-    // Check if enrollment exists and is completed
-    const enrollment = await db.get(
-      'SELECT id FROM enrollments WHERE student_id = ? AND course_id = ?',
-      [student_id, course_id]
-    );
-    if (!enrollment) {
-      return res.status(400).json({ error: 'Student not enrolled in this course' });
-    }
-
-    const certificateId = generateCertificateId();
-    const verificationCode = crypto.randomBytes(16).toString('hex').toUpperCase();
-
-    const result = await db.run(
-      `INSERT INTO certificates (certificate_id, student_id, course_id, issue_date, grade, verification_code)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        certificateId, student_id, course_id,
-        issue_date || new Date().toISOString().split('T')[0],
-        grade, verificationCode
-      ]
-    );
-
-    // Update enrollment status
-    await db.run(
-      'UPDATE enrollments SET status = ?, completion_date = CURRENT_DATE WHERE student_id = ? AND course_id = ?',
-      ['Completed', student_id, course_id]
-    );
-
-    await logAction(req.user.id, 'create_certificate', 'academy', result.lastID, { certificateId }, req);
-
-    const stu = await db.get('SELECT user_id FROM students WHERE id = ?', [student_id]);
-    if (stu) {
-      try {
-        const crs = await db.get('SELECT course_code, title FROM courses WHERE id = ?', [course_id]);
-        await sendNotificationToUser(stu.user_id, {
-          title: 'Certificate issued',
-          message: `A certificate has been issued for ${crs ? crs.title || crs.course_code : 'your course'}.`,
-          type: 'info',
-          link: '/student/certificates',
-          senderId: req.user.id
-        });
-      } catch (e) { console.error('Certificate notify student error:', e); }
-    }
-
-    res.status(201).json({
-      message: 'Certificate created successfully',
-      certificate: { id: result.lastID, certificate_id: certificateId, verification_code: verificationCode }
-    });
-  } catch (error) {
-    console.error('Create certificate error:', error);
-    res.status(500).json({ error: 'Failed to create certificate' });
-  }
+// Legacy create without file upload — disabled; use POST /api/certificates with certificate_file
+router.post('/certificates', authenticateToken, requireRole('Admin', 'Instructor'), async (req, res) => {
+  return res.status(400).json({
+    error: 'Certificate file upload is required. Use the Academy Certificates tab to upload a PNG, JPEG, or PDF file.'
+  });
 });
 
 // Verify certificate (public endpoint - no auth required)

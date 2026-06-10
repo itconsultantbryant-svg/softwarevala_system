@@ -84,9 +84,10 @@ const PublicVerification = () => {
   };
 
   const getFileUrl = (certificate) => {
+    if (certificate?.file_available === false) return null;
     if (certificate?.id) {
       // Use API endpoint to ensure view works even for legacy file_path formats.
-      return `${getApiBaseUrl()}/certificates/public/${certificate.id}/download/original`;
+      return `${getApiBaseUrl()}/certificates/public/${certificate.id}/download/original?inline=1`;
     }
     if (certificate?.file_path) {
       return normalizeUrl(certificate.file_path);
@@ -234,6 +235,12 @@ const PublicVerification = () => {
                                   <div className="col-md-12">
                                     <strong>Course Period:</strong> {new Date(certificate.course_start_date).toLocaleDateString()} - {new Date(certificate.course_end_date).toLocaleDateString()}
                                   </div>
+                                </div>
+                              )}
+
+                              {certificate.file_available === false && (
+                                <div className="alert alert-warning py-2 small mb-3">
+                                  Certificate record exists but the file is not available on the server. Please contact Academy administration.
                                 </div>
                               )}
 

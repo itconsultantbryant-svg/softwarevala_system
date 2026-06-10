@@ -153,7 +153,12 @@ const CertificateForm = ({ certificate, onClose }) => {
       
       onClose();
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to save certificate');
+      const data = err.response?.data;
+      const msg =
+        data?.error ||
+        (Array.isArray(data?.errors) ? data.errors.map((e) => e.msg).join(', ') : null) ||
+        'Failed to save certificate';
+      setError(msg);
     } finally {
       setLoading(false);
     }

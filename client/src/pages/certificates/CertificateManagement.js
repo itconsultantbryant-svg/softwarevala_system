@@ -286,13 +286,14 @@ const CertificateManagement = ({ embedded = false }) => {
                   <th>Course</th>
                   <th>Issue Date</th>
                   <th>Grade</th>
+                  <th>File</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {certificates.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="text-center text-muted">
+                    <td colSpan="8" className="text-center text-muted">
                       {searchQuery ? 'No certificates found matching your search.' : 'No certificates found. Click "Add Certificate" to create one.'}
                     </td>
                   </tr>
@@ -315,6 +316,15 @@ const CertificateManagement = ({ embedded = false }) => {
                           <span className="badge bg-success">{certificate.grade}</span>
                         ) : (
                           <span className="text-muted">N/A</span>
+                        )}
+                      </td>
+                      <td>
+                        {certificate.file_available !== false ? (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle">Available</span>
+                        ) : (
+                          <span className="badge bg-warning-subtle text-warning border border-warning-subtle" title="Re-upload the certificate file">
+                            Missing file
+                          </span>
                         )}
                       </td>
                       <td>

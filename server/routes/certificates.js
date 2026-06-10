@@ -10,7 +10,16 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const { getUploadsRoot, resolveUploadsDiskPath } = require('../utils/uploadsRoot');
-const { toPublicCertificatePath, deliverCertificateBinary } = require('../utils/certificateFileDelivery');
+const {
+  toPublicCertificatePath,
+  deliverCertificateBinary,
+  certificateRecordHasFile
+} = require('../utils/certificateFileDelivery');
+const {
+  isCertificateWindowOpenForCohort,
+  isCertificatePublicAccessBlocked
+} = require('../utils/certificateAccess');
+const { repairCertificateFiles } = require('../utils/repairCertificateFiles');
 
 // Configure multer for certificate file uploads
 const storage = multer.diskStorage({
@@ -99,25 +108,11 @@ async function isAcademyTeam(user) {
   return false;
 }
 
-function isCertificateWindowOpenForCohort(row) {
-  const enabled = Number(row?.cert_access_enabled || 0) === 1;
-  if (!enabled) return false;
-  const now = new Date();
-  if (row?.cert_access_start) {
-    const start = new Date(row.cert_access_start);
-    if (now < start) return false;
-  }
-  if (row?.cert_access_end) {
-    const end = new Date(row.cert_access_end);
-    if (now > end) return false;
-  }
-  return true;
-}
-
 /** Columns returned to clients — excludes heavy file_data_url blob. */
 const CERTIFICATE_LIST_SELECT = `
   c.id, c.certificate_id, c.student_id, c.course_id, c.issue_date, c.completion_date,
-  c.grade, c.verification_code, c.file_path, c.pdf_path, c.file_type, c.created_at, c.updated_at
+  c.grade, c.verification_code, c.file_path, c.pdf_path, c.file_type, c.created_at, c.updated_at,
+  (CASE WHEN c.file_data_url IS NOT NULL AND LENGTH(TRIM(c.file_data_url)) > 0 THEN 1 ELSE 0 END) as has_stored_blob
 `;
 
 function normalizeCertificateRow(certificate) {
@@ -131,8 +126,23 @@ function normalizeCertificateRow(certificate) {
     ...rest,
     student_image: normalizeProfileImage(rest.student_image),
     file_path: resolvedFilePath,
-    file_type: rest.file_type || inferredType
+    file_type: rest.file_type || inferredType,
+    file_available: certificateRecordHasFile({
+      ...rest,
+      file_path: resolvedFilePath,
+      pdf_path: rest.pdf_path
+    })
   };
+}
+
+async function ensureCohortCertAccessOpen(studentId) {
+  const student = await db.get('SELECT cohort_id FROM students WHERE id = ?', [studentId]);
+  if (!student?.cohort_id) return;
+  await db.run(
+    `UPDATE cohorts SET cert_access_enabled = 1
+     WHERE id = ? AND COALESCE(cert_access_enabled, 0) = 0`,
+    [student.cohort_id]
+  );
 }
 
 let cachedCertificateColumnNames = null;
@@ -161,26 +171,22 @@ async function getCertificateColumnNames() {
 
 async function ensureCertificateStorageColumns() {
   const certColumns = await getCertificateColumnNames();
-  try {
-    if (!certColumns.includes('file_path')) {
-      await db.run('ALTER TABLE certificates ADD COLUMN file_path TEXT');
-    }
-  } catch (_err) {}
-  try {
-    if (!certColumns.includes('file_type')) {
-      await db.run('ALTER TABLE certificates ADD COLUMN file_type TEXT');
-    }
-  } catch (_err) {}
-  try {
-    if (!certColumns.includes('completion_date')) {
-      await db.run('ALTER TABLE certificates ADD COLUMN completion_date DATE');
-    }
-  } catch (_err) {}
-  try {
-    if (!certColumns.includes('file_data_url')) {
-      await db.run('ALTER TABLE certificates ADD COLUMN file_data_url TEXT');
-    }
-  } catch (_err) {}
+  let altered = false;
+  const addColumn = async (name, ddl) => {
+    if (certColumns.includes(name)) return;
+    try {
+      await db.run(ddl);
+      altered = true;
+    } catch (_err) {}
+  };
+  await addColumn('file_path', 'ALTER TABLE certificates ADD COLUMN file_path TEXT');
+  await addColumn('file_type', 'ALTER TABLE certificates ADD COLUMN file_type TEXT');
+  await addColumn('completion_date', 'ALTER TABLE certificates ADD COLUMN completion_date DATE');
+  await addColumn('file_data_url', 'ALTER TABLE certificates ADD COLUMN file_data_url TEXT');
+  await addColumn('updated_at', 'ALTER TABLE certificates ADD COLUMN updated_at DATETIME');
+  if (altered) {
+    cachedCertificateColumnNames = null;
+  }
 }
 
 let certificateColumnsReady = false;
@@ -366,6 +372,13 @@ router.post('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', 
       return res.status(400).json({ error: 'Certificate file is required' });
     }
 
+    const absoluteUploaded = path.resolve(req.file.path);
+    if (!fs.existsSync(absoluteUploaded)) {
+      return res.status(500).json({
+        error: 'Certificate file could not be saved on the server. Please try again or contact support.'
+      });
+    }
+
     const certificateId = generateCertificateId();
     const verificationCode = crypto.randomBytes(16).toString('hex').toUpperCase();
 
@@ -375,6 +388,7 @@ router.post('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', 
     const filePath = `/uploads/certificates/${req.file.filename}`;
 
     await ensureCertificateColumnsOnce();
+    cachedCertificateColumnNames = null;
     const certColumns = await getCertificateColumnNames();
     const fields = ['certificate_id', 'student_id', 'course_id', 'issue_date', 'grade', 'verification_code'];
     const values = [
@@ -419,6 +433,8 @@ router.post('/', authenticateToken, requireRole('Admin', 'Staff', 'Instructor', 
         ['Completed', completion_date || new Date().toISOString().split('T')[0], student_id, course_id]
       );
     }
+
+    await ensureCohortCertAccessOpen(student_id);
 
     logAction(req.user.id, 'create_certificate', 'certificates', result.lastID, { certificateId }, req).catch(
       (err) => console.error('create_certificate audit log failed:', err.message)
@@ -479,6 +495,13 @@ router.put('/:id', authenticateToken, requireRole('Admin', 'Staff', 'Instructor'
 
     // Handle file update
     if (req.file) {
+      const absoluteUploaded = path.resolve(req.file.path);
+      if (!fs.existsSync(absoluteUploaded)) {
+        return res.status(500).json({
+          error: 'Certificate file could not be saved on the server. Please try again.'
+        });
+      }
+
       // Delete old file
       if (certificate.file_path) {
         const oldFilePath = resolveUploadsDiskPath(certificate.file_path);
@@ -490,6 +513,7 @@ router.put('/:id', authenticateToken, requireRole('Admin', 'Staff', 'Instructor'
       const filePath = `/uploads/certificates/${req.file.filename}`;
 
       await ensureCertificateColumnsOnce();
+      cachedCertificateColumnNames = null;
       const certColumns = await getCertificateColumnNames();
       if (certColumns.includes('file_path')) {
         updates.push('file_path = ?');
@@ -591,7 +615,7 @@ router.post('/verify', async (req, res) => {
        JOIN users u ON s.user_id = u.id
        JOIN courses co ON c.course_id = co.id
        LEFT JOIN cohorts ch ON ch.id = s.cohort_id
-       WHERE LOWER(u.name) = LOWER(?) AND s.student_id = ?`,
+       WHERE LOWER(TRIM(u.name)) = LOWER(TRIM(?)) AND TRIM(s.student_id) = TRIM(?)`,
       [student_name.trim(), student_id.trim()]
     );
 
@@ -599,7 +623,7 @@ router.post('/verify', async (req, res) => {
       return res.status(404).json({ error: 'Certificate not found. Please verify the student name and ID.' });
     }
 
-    const blockedByWindow = certificates.some((row) => !isCertificateWindowOpenForCohort(row));
+    const blockedByWindow = certificates.some((row) => isCertificatePublicAccessBlocked(row));
     if (blockedByWindow) {
       return res.status(403).json({
         error: 'Certificate access for this cohort is currently closed. Please contact Academy administration.'
@@ -629,6 +653,7 @@ router.post('/verify', async (req, res) => {
         grade: certificate.grade,
         file_path: toPublicCertificatePath(certificate.file_path || certificate.pdf_path || null),
         file_type: certificate.file_type || (String(certificate.file_path || certificate.pdf_path || '').toLowerCase().endsWith('.pdf') ? 'pdf' : 'image'),
+        file_available: certificateRecordHasFile(certificate),
         verification_code: certificate.verification_code
       })),
       access_window: {
@@ -674,7 +699,9 @@ router.get('/:id/download/:format', authenticateToken, async (req, res) => {
       }
     }
 
-    await deliverCertificateBinary(res, db, certificate, {});
+    await deliverCertificateBinary(res, db, certificate, {
+      notFoundMessage: 'Certificate file not available'
+    });
     return;
   } catch (error) {
     console.error('Download certificate error:', error);
@@ -693,7 +720,8 @@ router.get('/public/:id/download/:format', async (req, res) => {
     }
 
     const certificate = await db.get(
-      `SELECT c.id, COALESCE(c.file_path, c.pdf_path) as file_path, c.file_data_url, c.certificate_id, c.file_type,
+      `SELECT c.*, COALESCE(c.file_path, c.pdf_path) as resolved_file_path,
+              s.cohort_id,
               ch.cert_access_enabled, ch.cert_access_start, ch.cert_access_end
        FROM certificates c
        JOIN students s ON s.id = c.student_id
@@ -706,11 +734,15 @@ router.get('/public/:id/download/:format', async (req, res) => {
       return res.status(404).json({ error: 'Certificate not found' });
     }
 
-    if (!isCertificateWindowOpenForCohort(certificate)) {
+    if (isCertificatePublicAccessBlocked(certificate)) {
       return res.status(403).json({ error: 'Certificate access window is closed for this cohort' });
     }
 
-    await deliverCertificateBinary(res, db, certificate, {});
+    const inline = req.query.inline === '1' || req.query.inline === 'true';
+    await deliverCertificateBinary(res, db, certificate, {
+      inline,
+      notFoundMessage: 'Certificate file not available'
+    });
     return;
   } catch (error) {
     console.error('Public download certificate error:', error);
@@ -718,9 +750,11 @@ router.get('/public/:id/download/:format', async (req, res) => {
   }
 });
 
-ensureCertificateColumnsOnce().catch((err) => {
-  console.warn('Certificate column bootstrap deferred:', err?.message);
-});
+ensureCertificateColumnsOnce()
+  .then(() => repairCertificateFiles(db))
+  .catch((err) => {
+    console.warn('Certificate bootstrap/repair deferred:', err?.message);
+  });
 
 module.exports = router;
 
