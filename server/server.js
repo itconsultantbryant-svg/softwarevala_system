@@ -20,13 +20,10 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const allowedSocketOrigins = [
   process.env.FRONTEND_URL,
-  'https://prinstinemanagementsystem.com',
-  'https://www.prinstinemanagementsystem.com',
-  'https://prinstinemanagementsystem.org',
-  'https://www.prinstinemanagementsystem.org',
-  'https://prinstine-group-system-frontend.onrender.com',
+  'https://softwarevala-backend.onrender.com',
   'http://localhost:3000',
-  'http://localhost:3001'
+  'http://localhost:3001',
+  'http://127.0.0.1:3000'
 ].filter(Boolean);
 
 const io = socketIo(server, {
@@ -40,10 +37,11 @@ const io = socketIo(server, {
     origin: function (origin, callback) {
       // Allow production domain and other allowed origins
       if (!origin || 
-          origin.includes('prinstinemanagementsystem.com') ||
-          origin.includes('prinstinemanagementsystem.org') ||
-          origin.includes('prinstine-group-system-frontend.onrender.com') || 
+          origin.includes('onrender.com') ||
+          origin.includes('vercel.app') ||
+          origin.includes('softwarevalalib.app') ||
           origin.includes('localhost') || 
+          origin.includes('127.0.0.1') ||
           allowedSocketOrigins.indexOf(origin) !== -1 ||
           allowedSocketOrigins.some(allowed => origin.includes(allowed.replace(/^https?:\/\//, '')))) {
         return callback(null, true);

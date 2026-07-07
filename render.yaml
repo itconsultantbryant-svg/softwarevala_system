@@ -1,0 +1,53 @@
+# Render Blueprint — Software Vala Liberia Management System
+# Dashboard: New → Blueprint → connect this repo → deploy
+
+services:
+  - type: web
+    name: softwarevala-backend
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: server
+    buildCommand: npm install && cd ../client && npm install && CI=false npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    disk:
+      name: softwarevala-data
+      mountPath: /var/data
+      sizeGB: 10
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: HOST
+        value: 0.0.0.0
+      - key: DB_PATH
+        value: /var/data/pms.db
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      - key: API_BODY_LIMIT_MB
+        value: 50
+      - key: CERTIFICATE_MAX_FILE_SIZE_MB
+        value: 15
+      - key: JWT_EXPIRES_IN
+        value: 24h
+      - key: FRONTEND_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: EMAIL_FROM
+        value: noreply@softwarevalalib.app
+      - key: DATABASE_URL
+        sync: false

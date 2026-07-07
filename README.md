@@ -41,6 +41,17 @@ cd server && node scripts/create-admin.js
 └── render.yaml      # Render backend blueprint
 ```
 
+## Production deployment (Render)
+
+| Step | Action |
+|------|--------|
+| 1 | Push `render.yaml` on branch `main` |
+| 2 | Render → **New** → **Blueprint** → connect this repo |
+| 3 | Set `FRONTEND_URL` to your frontend URL after deploy |
+| 4 | Health check: `https://softwarevala-backend.onrender.com/api/health` |
+
+See [DEPLOY_RENDER.md](./DEPLOY_RENDER.md) for full instructions.
+
 ## Environment
 
 - Backend: copy `server/.env.example` to `server/.env` for local development.
