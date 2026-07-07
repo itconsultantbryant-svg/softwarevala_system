@@ -103,8 +103,8 @@ const PublicVerification = () => {
             <div className="card-body">
               <div className="text-center mb-4">
                 <img 
-                  src="/prinstine-logo.png" 
-                  alt="Prinstine Group" 
+                  src="/softwarevala-logo.png" 
+                  alt="Software Vala Liberia" 
                   style={{ maxWidth: '200px', height: 'auto', marginBottom: '2rem' }}
                   onError={(e) => {
                     e.target.style.display = 'none';

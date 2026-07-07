@@ -93,7 +93,7 @@ const Navbar = () => {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, {
               body: message,
-              icon: '/prinstine-logo.png'
+              icon: '/softwarevala-logo.png'
             });
           }
         };
@@ -163,7 +163,7 @@ const Navbar = () => {
         { path: '/staff', label: 'Staff', icon: 'bi-people', roles: ['Admin'] },
         { path: '/clients', label: 'Clients', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/partners', label: 'Partners', icon: 'bi-handshake', roles: ['Admin'] },
-        { path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] },
+        // { path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] },
         { path: '/reports', label: 'Reports', icon: 'bi-file-text', roles: ['Admin', 'Staff'] }
       );
     } else if (user?.role === 'Staff') {
@@ -177,13 +177,11 @@ const Navbar = () => {
         { path: '/reports', label: 'Reports', icon: 'bi-file-text', roles: ['Admin', 'Staff', 'DepartmentHead'] }
       );
     } else if (user?.role === 'Instructor') {
-      links.push(
-        { path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] }
-      );
+      // Academy disabled
+      // links.push({ path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] });
     } else if (user?.role === 'Student') {
-      links.push(
-        { path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] }
-      );
+      // Academy disabled
+      // links.push({ path: '/academy', label: 'Academy', icon: 'bi-book', roles: ['Admin', 'Instructor', 'Student'] });
     }
 
     return links.filter(link => link.roles.includes(user?.role));
@@ -194,7 +192,7 @@ const Navbar = () => {
       <div className="container-fluid">
         <Link className="navbar-brand" to="/dashboard">
           <i className="bi bi-building me-2"></i>
-          Prinstine Management System
+          Software Vala Liberia
         </Link>
         <button
           className="navbar-toggler"

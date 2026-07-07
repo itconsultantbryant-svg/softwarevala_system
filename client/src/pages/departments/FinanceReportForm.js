@@ -371,8 +371,8 @@ const FinanceReportForm = ({ report, onClose }) => {
     
     content += `2. REVENUE SUMMARY\n`;
     content += `----------------------------------------\n`;
-    content += `Prinstine Consult: $${parseFloat(formData.revenue.prinstineConsult || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
-    content += `Prinstine Academy: $${parseFloat(formData.revenue.prinstineAcademy || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    content += `Software Vala Consult: $${parseFloat(formData.revenue.prinstineConsult || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
+    content += `Software Vala Academy: $${parseFloat(formData.revenue.prinstineAcademy || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
     content += `Microfinance & Lending Interest Income: $${parseFloat(formData.revenue.microfinanceInterest || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
     content += `Other Revenue: $${parseFloat(formData.revenue.otherRevenue || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n`;
     if (formData.revenue.otherRevenueComments) {
@@ -628,7 +628,7 @@ const FinanceReportForm = ({ report, onClose }) => {
             <h5 className="section-title">2. Revenue Summary</h5>
             <div className="row">
               <div className="col-md-6 mb-3">
-                <label className="form-label">Prinstine Consult *</label>
+                <label className="form-label">Software Vala Consult *</label>
                 <div className="input-group">
                   <span className="input-group-text">$</span>
                   <input
@@ -643,7 +643,7 @@ const FinanceReportForm = ({ report, onClose }) => {
                 </div>
               </div>
               <div className="col-md-6 mb-3">
-                <label className="form-label">Prinstine Academy *</label>
+                <label className="form-label">Software Vala Academy *</label>
                 <div className="input-group">
                   <span className="input-group-text">$</span>
                   <input

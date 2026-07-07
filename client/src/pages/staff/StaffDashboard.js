@@ -1,13 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import api from '../../config/api';
 import { useAuth } from '../../hooks/useAuth';
 import ProgressReport from '../departments/ProgressReport';
 import ReportTemplateRouter from '../departments/ReportTemplateRouter';
+import {
+  DashboardShell,
+  MetricTile,
+  ActionTile,
+  QuickLinks,
+  InfoPanel
+} from '../../components/dashboard/DashboardShell';
 
 const StaffDashboard = () => {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [staffInfo, setStaffInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showProgressReport, setShowProgressReport] = useState(false);
@@ -110,266 +115,131 @@ const StaffDashboard = () => {
 
   if (showProgressReport) {
     return (
-      <div className="container-fluid">
-        <div className="d-flex justify-content-between align-items-center mb-3">
-          <h4>Progress Report</h4>
-          <button 
-            className="btn btn-secondary"
-            onClick={() => setShowProgressReport(false)}
-          >
-            <i className="bi bi-arrow-left me-2"></i>Back to Dashboard
-          </button>
-        </div>
+      <DashboardShell title="Progress Report" subtitle="Submit and track your work progress" showLogo={false}>
+        <button
+          type="button"
+          className="btn btn-outline-secondary mb-3"
+          onClick={() => setShowProgressReport(false)}
+        >
+          <i className="bi bi-arrow-left me-2" />Back to Dashboard
+        </button>
         <ProgressReport />
-      </div>
+      </DashboardShell>
     );
   }
 
   return (
-    <div className="container-fluid">
-      <div className="row mb-4">
-        <div className="col-12">
-          <h2 className="mb-0">Staff Dashboard</h2>
-          <p className="text-muted">Welcome, {user?.name || 'Staff Member'}</p>
-        </div>
-      </div>
-
-      {/* Staff Information Card */}
+    <DashboardShell
+      title="Staff Dashboard"
+      subtitle={`Welcome, ${user?.name || 'Staff Member'} — Software Vala Liberia`}
+      badge={staffInfo?.department || 'Staff Portal'}
+      badgeIcon="bi-briefcase-fill"
+    >
       {staffInfo && (
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header bg-primary text-white">
-                <h5 className="mb-0">
-                  <i className="bi bi-person-circle me-2"></i>My Information
-                </h5>
+        <InfoPanel title="My Information" icon="bi-person-vcard-fill">
+          <div className="row g-3">
+            <div className="col-md-3"><strong>Staff ID:</strong> {staffInfo.staff_id}</div>
+            <div className="col-md-3"><strong>Position:</strong> {staffInfo.position || 'N/A'}</div>
+            <div className="col-md-3"><strong>Department:</strong> {staffInfo.department || 'N/A'}</div>
+            <div className="col-md-3"><strong>Employment:</strong> {staffInfo.employment_type || 'N/A'}</div>
+            {staffInfo.employment_date && (
+              <div className="col-md-3">
+                <strong>Start Date:</strong> {new Date(staffInfo.employment_date).toLocaleDateString()}
               </div>
-              <div className="card-body">
-                <div className="row">
-                  <div className="col-md-3">
-                    <strong>Staff ID:</strong> {staffInfo.staff_id}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Position:</strong> {staffInfo.position || 'N/A'}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Department:</strong> {staffInfo.department || 'N/A'}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Employment Type:</strong> {staffInfo.employment_type || 'N/A'}
-                  </div>
-                </div>
-                {staffInfo.employment_date && (
-                  <div className="row mt-2">
-                    <div className="col-md-3">
-                      <strong>Employment Date:</strong> {new Date(staffInfo.employment_date).toLocaleDateString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            )}
           </div>
-        </div>
+        </InfoPanel>
       )}
 
-      {/* Quick Actions */}
-      <div className="row mb-4">
-        <div className="col-md-4 mb-3">
-          <div className="card border-primary h-100">
-            <div className="card-header bg-primary text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-file-text me-2"></i>Progress Reports
-              </h5>
-            </div>
-            <div className="card-body">
-              <div className="row text-center mb-3">
-                <div className="col-12 mb-3">
-                  <h2 className="mb-0">{stats.progressReports}</h2>
-                  <small className="text-muted">Total Reports</small>
-                </div>
-              </div>
-              <div className="row text-center mb-3">
-                <div className="col-6">
-                  <div className="badge bg-warning text-dark">{stats.pendingReports} Pending</div>
-                </div>
-                <div className="col-6">
-                  <div className="badge bg-success">{stats.approvedReports} Approved</div>
-                </div>
-              </div>
-              <div className="mt-3">
-                <button 
-                  className="btn btn-outline-primary w-100"
-                  onClick={() => setShowProgressReport(true)}
-                >
-                  <i className="bi bi-plus-circle me-2"></i>Submit Progress Report
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="sv-dashboard__section-title">
+        <i className="bi bi-speedometer2" />
+        Your Overview
+      </div>
+      <div className="sv-metric-grid">
+        <MetricTile icon="bi-journal-check" label="Progress Reports" value={stats.progressReports} variant="navy" />
+        <MetricTile icon="bi-hourglass-split" label="Pending" value={stats.pendingReports} variant="red" />
+        <MetricTile icon="bi-check2-circle" label="Approved" value={stats.approvedReports} variant="green" />
+      </div>
 
-        <div className="col-md-4 mb-3">
-          <div className="card border-info h-100">
-            <div className="card-header bg-info text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-chat-dots me-2"></i>Communications
-              </h5>
-            </div>
-            <div className="card-body">
-              <p className="text-muted">View and respond to communications from admin and other staff members.</p>
-              <Link to="/communications" className="btn btn-outline-info w-100">
-                <i className="bi bi-arrow-right me-2"></i>View Communications
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-md-4 mb-3">
-          <div className="card border-success h-100">
-            <div className="card-header bg-success text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-file-earmark-text me-2"></i>Client Reports
-              </h5>
-            </div>
-            <div className="card-body">
-              <p className="text-muted">Submit and manage client-specific activity reports.</p>
-              <Link to="/staff-client-reports" className="btn btn-outline-success w-100">
-                <i className="bi bi-arrow-right me-2"></i>View Client Reports
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        {/* Department Report Card (for Finance, Marketing, and Academy Staff) */}
-        {staffInfo && department && (staffInfo.department.toLowerCase().includes('finance') || 
-                                     staffInfo.department.toLowerCase().includes('marketing') || 
-                                     staffInfo.department.toLowerCase().includes('academy')) && (
-          <div className="col-md-4 mb-3">
-            <div className="card border-warning h-100">
-              <div className="card-header bg-warning text-dark">
-                <h5 className="mb-0">
-                  <i className="bi bi-file-text me-2"></i>{department.name} Reports
-                </h5>
-              </div>
-              <div className="card-body">
-                <div className="row text-center mb-3">
-                  <div className="col-12 mb-3">
-                    <h2 className="mb-0">{departmentReports.length}</h2>
-                    <small className="text-muted">{department.name} Reports</small>
-                  </div>
-                </div>
-                <p className="text-muted small">Submit {department.name} Department reports (requires {department.name} Department Head approval).</p>
-                <button 
-                  className="btn btn-outline-warning w-100"
-                  onClick={() => {
-                    setReportType(null);
-                    setShowDepartmentReport(true);
-                  }}
-                >
-                  <i className="bi bi-plus-circle me-2"></i>Submit {department.name} Report
-                </button>
-              </div>
-            </div>
-          </div>
+      <div className="sv-dashboard__section-title">
+        <i className="bi bi-lightning-charge-fill" />
+        Work Tools
+      </div>
+      <div className="sv-action-grid">
+        <ActionTile
+          icon="bi-clipboard-data-fill"
+          title="Progress Reports"
+          description="Submit weekly progress updates and track approval status."
+          onClick={() => setShowProgressReport(true)}
+          actionLabel="Submit Report"
+          headVariant="navy"
+        />
+        <ActionTile
+          icon="bi-chat-square-dots-fill"
+          title="Communications"
+          description="View and respond to messages from admin and colleagues."
+          to="/communications"
+          actionLabel="Open Messages"
+          headVariant="teal"
+        />
+        <ActionTile
+          icon="bi-file-earmark-person-fill"
+          title="Client Reports"
+          description="Submit and manage client-specific activity reports."
+          to="/staff-client-reports"
+          actionLabel="View Reports"
+          headVariant="slate"
+        />
+        {staffInfo && department && (staffInfo.department.toLowerCase().includes('finance') ||
+          staffInfo.department.toLowerCase().includes('marketing')) && (
+          <ActionTile
+            icon="bi-building-fill-gear"
+            title={`${department.name} Reports`}
+            description={`Submit ${department.name} department reports for head approval.`}
+            onClick={() => { setReportType(null); setShowDepartmentReport(true); }}
+            actionLabel="Submit Department Report"
+            headVariant="red"
+            btnVariant="red"
+          />
         )}
+        <ActionTile
+          icon="bi-bell-fill"
+          title="Notifications"
+          description="Stay updated with system alerts and announcements."
+          to="/notifications-view"
+          actionLabel="View Alerts"
+          headVariant="red"
+          btnVariant="red"
+        />
+        <ActionTile
+          icon="bi-telephone-fill"
+          title="Call Memos"
+          description="Create and manage client call memos."
+          to="/call-memos"
+          actionLabel="Open Call Memos"
+          headVariant="teal"
+        />
+        <ActionTile
+          icon="bi-file-earmark-richtext-fill"
+          title="Proposals"
+          description="Create and manage business proposals."
+          to="/proposals"
+          actionLabel="View Proposals"
+          headVariant="navy"
+        />
       </div>
 
-      <div className="row mb-4">
-        <div className="col-md-4 mb-3">
-          <div className="card border-warning h-100">
-            <div className="card-header bg-warning text-dark">
-              <h5 className="mb-0">
-                <i className="bi bi-bell me-2"></i>Notifications
-              </h5>
-            </div>
-            <div className="card-body">
-              <p className="text-muted">View notifications and updates from the system.</p>
-              <Link to="/notifications-view" className="btn btn-outline-warning w-100">
-                <i className="bi bi-arrow-right me-2"></i>View Notifications
-              </Link>
-            </div>
-          </div>
-        </div>
+      <QuickLinks
+        links={[
+          { icon: 'bi-person-fill', label: 'My Profile', to: '/profile' },
+          { icon: 'bi-clipboard-data', label: 'Progress Reports', onClick: () => setShowProgressReport(true) },
+          { icon: 'bi-envelope-fill', label: 'Messages', to: '/communications' },
+          { icon: 'bi-file-earmark-text', label: 'Client Reports', to: '/staff-client-reports' },
+          { icon: 'bi-bell', label: 'Notifications', to: '/notifications-view' },
+          { icon: 'bi-calendar3', label: 'Calendar', to: '/calendar' }
+        ]}
+      />
 
-        <div className="col-md-4 mb-3">
-          <div className="card border-info h-100">
-            <div className="card-header bg-info text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-telephone me-2"></i>Call Memos
-              </h5>
-            </div>
-            <div className="card-body">
-              <p className="text-muted">Create and manage client call memos.</p>
-              <Link to="/call-memos" className="btn btn-outline-info w-100">
-                <i className="bi bi-arrow-right me-2"></i>View Call Memos
-              </Link>
-            </div>
-          </div>
-        </div>
-
-        <div className="col-md-4 mb-3">
-          <div className="card border-primary h-100">
-            <div className="card-header bg-primary text-white">
-              <h5 className="mb-0">
-                <i className="bi bi-file-earmark-check me-2"></i>Proposals
-              </h5>
-            </div>
-            <div className="card-body">
-              <p className="text-muted">Create and manage business proposals.</p>
-              <Link to="/proposals" className="btn btn-outline-primary w-100">
-                <i className="bi bi-arrow-right me-2"></i>View Proposals
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Activity */}
-      <div className="row">
-        <div className="col-12">
-          <div className="card">
-            <div className="card-header">
-              <h5 className="mb-0">
-                <i className="bi bi-clock-history me-2"></i>Quick Links
-              </h5>
-            </div>
-            <div className="card-body">
-              <div className="row">
-                <div className="col-md-3 mb-2">
-                  <Link to="/profile" className="btn btn-outline-primary w-100">
-                    <i className="bi bi-person me-2"></i>My Profile
-                  </Link>
-                </div>
-                <div className="col-md-3 mb-2">
-                  <button 
-                    className="btn btn-outline-secondary w-100"
-                    onClick={() => setShowProgressReport(true)}
-                  >
-                    <i className="bi bi-file-text me-2"></i>Progress Reports
-                  </button>
-                </div>
-                <div className="col-md-3 mb-2">
-                  <Link to="/communications" className="btn btn-outline-info w-100">
-                    <i className="bi bi-envelope me-2"></i>Messages
-                  </Link>
-                </div>
-                <div className="col-md-3 mb-2">
-                  <Link to="/staff-client-reports" className="btn btn-outline-success w-100">
-                    <i className="bi bi-file-earmark-text me-2"></i>Client Reports
-                  </Link>
-                </div>
-                <div className="col-md-3 mb-2">
-                  <Link to="/notifications-view" className="btn btn-outline-warning w-100">
-                    <i className="bi bi-bell me-2"></i>Notifications
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Department Report Form Modal */}
       {showDepartmentReport && department && (
         <ReportTemplateRouter
           department={department}
@@ -382,7 +252,7 @@ const StaffDashboard = () => {
           }}
         />
       )}
-    </div>
+    </DashboardShell>
   );
 };
 

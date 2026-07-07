@@ -18,6 +18,8 @@ import {
   Legend
 } from 'chart.js';
 import { Bar, Pie, Line } from 'react-chartjs-2';
+import { MetricTile } from '../components/dashboard/DashboardShell';
+import '../components/dashboard/DashboardTheme.css';
 
 ChartJS.register(
   CategoryScale,
@@ -128,8 +130,9 @@ const Dashboard = () => {
   const role = (user?.role ?? '').toString().trim().toLowerCase();
   if (role === 'departmenthead') return <Navigate to="/department-dashboard" replace />;
   if (role === 'staff') return <Navigate to="/staff-dashboard" replace />;
-  if (role === 'student') return <Navigate to="/student" replace />;
-  if (role === 'instructor') return <Navigate to="/academy" replace />;
+  // Academy portals disabled
+  // if (role === 'student') return <Navigate to="/student" replace />;
+  // if (role === 'instructor') return <Navigate to="/academy" replace />;
 
   const handleSearch = async (e) => {
     e.preventDefault();
@@ -163,7 +166,7 @@ const Dashboard = () => {
       datasets: [{
         label: 'Staff Distribution',
         data: [stats.staff.fullTime, stats.staff.partTime, stats.staff.internship],
-        backgroundColor: ['#007BFF', '#FFC107', '#28a745']
+        backgroundColor: ['#003366', '#C41E3A', '#28a745']
       }]
     };
   };
@@ -179,19 +182,18 @@ const Dashboard = () => {
           stats.reports.total - stats.reports.pending,
           0
         ],
-        backgroundColor: ['#FFC107', '#28a745', '#dc3545']
+        backgroundColor: ['#C41E3A', '#28a745', '#003366']
       }]
     };
   };
 
   return (
-    <div className="container-fluid">
-      <div className="row mb-4">
-        <div className="col-12 d-flex align-items-center gap-3">
+    <div className="container-fluid sv-dashboard">
+      <div className="sv-dashboard__hero d-flex align-items-center gap-3">
           <img 
-            src="/prinstine-logo.png" 
-            alt="Prinstine Group" 
-            style={{ maxHeight: '50px', width: 'auto' }}
+            src="/softwarevala-logo.png" 
+            alt="Software Vala Liberia" 
+            style={{ maxHeight: '50px', width: 'auto', background: 'white', padding: '4px 8px', borderRadius: '6px' }}
             className="d-none d-md-block"
             onError={(e) => {
               e.target.style.display = 'none';
@@ -199,10 +201,9 @@ const Dashboard = () => {
           />
           <div>
             <h3 className="mb-0">Welcome back, {user?.name}!</h3>
-            <p className="text-muted mb-0">Here's what's happening in your dashboard</p>
+            <p className="text-muted mb-0">Software Vala Liberia — Here's what's happening in your dashboard</p>
           </div>
         </div>
-      </div>
 
       {/* Global Search */}
       <div className="row mb-4">
@@ -337,14 +338,32 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Admin overview metrics */}
+      {user?.role === 'Admin' && stats && (
+        <>
+          <div className="sv-dashboard__section-title">
+            <i className="bi bi-grid-1x2-fill" />
+            Organization Snapshot
+          </div>
+          <div className="sv-metric-grid mb-4">
+            <MetricTile icon="bi-people-fill" label="Staff" value={stats.staff?.total || 0} variant="navy" />
+            <MetricTile icon="bi-person-vcard-fill" label="Clients" value={stats.clients?.total || 0} variant="teal" />
+            <MetricTile icon="bi-handshake-fill" label="Partners" value={stats.partners?.total || 0} variant="green" />
+            <MetricTile icon="bi-building-fill" label="Departments" value={stats.departments?.total || 0} variant="slate" />
+            <MetricTile icon="bi-person-fill-gear" label="Users" value={stats.users?.total || 0} variant="red" />
+            <MetricTile icon="bi-file-earmark-bar-graph-fill" label="Reports" value={stats.reports?.total || 0} sub={`${stats.reports?.pending || 0} pending`} variant="navy" />
+          </div>
+        </>
+      )}
+
       {/* Stats Cards */}
       {user?.role === 'Admin' && stats && (
         <>
           {/* Main Statistics Row */}
           <div className="row mb-4">
-            {/* Academy Section */}
+            {/* Academy section disabled
             <div className="col-md-4 mb-3">
-              <div className="card border-primary h-100">
+              <div className="card border-primary h-100 dashboard-stat-card">
                 <div className="card-header bg-primary text-white">
                   <h5 className="mb-0">
                     <i className="bi bi-book me-2"></i>Academy
@@ -354,7 +373,7 @@ const Dashboard = () => {
                   <div className="row text-center">
                     <div className="col-4">
                       <div className="mb-2">
-                        <i className="bi bi-mortarboard" style={{ fontSize: '2rem', color: '#007BFF' }}></i>
+                        <i className="bi bi-mortarboard" style={{ fontSize: '2rem', color: '#003366' }}></i>
                       </div>
                       <h3 className="mb-0">{stats.academy?.students || 0}</h3>
                       <small className="text-muted">Students</small>
@@ -368,14 +387,14 @@ const Dashboard = () => {
                     </div>
                     <div className="col-4">
                       <div className="mb-2">
-                        <i className="bi bi-journal-bookmark" style={{ fontSize: '2rem', color: '#FFC107' }}></i>
+                        <i className="bi bi-journal-bookmark" style={{ fontSize: '2rem', color: '#C41E3A' }}></i>
                       </div>
                       <h3 className="mb-0">{stats.academy?.courses || 0}</h3>
                       <small className="text-muted">Courses</small>
                     </div>
                     <div className="col-4">
                       <div className="mb-2">
-                        <i className="bi bi-journal-bookmark" style={{ fontSize: '2rem', color: '#FFC107' }}></i>
+                        <i className="bi bi-journal-bookmark" style={{ fontSize: '2rem', color: '#C41E3A' }}></i>
                       </div>
                       <h3 className="mb-0">{stats.academy?.studentGrades || 0}</h3>
                       <small className="text-muted">Student Grades</small>
@@ -389,10 +408,11 @@ const Dashboard = () => {
                 </div>
               </div>
             </div>
+            */}
 
             {/* Partners Section */}
-            <div className="col-md-4 mb-3">
-              <div className="card border-success h-100">
+            <div className="col-md-6 mb-3">
+              <div className="card border-success h-100 dashboard-stat-card">
                 <div className="card-header bg-success text-white">
                   <h5 className="mb-0">
                     <i className="bi bi-handshake me-2"></i>Partners
@@ -414,8 +434,8 @@ const Dashboard = () => {
             </div>
 
             {/* Clients Section */}
-            <div className="col-md-4 mb-3">
-              <div className="card border-info h-100">
+            <div className="col-md-6 mb-3">
+              <div className="card border-info h-100 dashboard-stat-card">
                 <div className="card-header bg-info text-white">
                   <h5 className="mb-0">
                     <i className="bi bi-person-badge me-2"></i>Clients
@@ -442,7 +462,7 @@ const Dashboard = () => {
 
           {/* Second Row */}
           <div className="row mb-4">
-            {/* Certificates Section */}
+            {/* Certificates section disabled
             <div className="col-md-4 mb-3">
               <div className="card border-warning h-100">
                 <div className="card-header bg-warning text-dark">
@@ -461,18 +481,19 @@ const Dashboard = () => {
                 </div>
               </div>
             </div>
+            */}
 
             {/* Departments Section */}
-            <div className="col-md-4 mb-3">
+            <div className="col-md-6 mb-3">
               <div className="card border-secondary h-100">
                 <div className="card-header bg-secondary text-white">
                   <h5 className="mb-0">
-                    <i className="bi bi-building me-2"></i>Departments
+                    <i className="bi bi-building-fill me-2"></i>Departments
                   </h5>
                 </div>
                 <div className="card-body text-center">
                   <div className="mb-3">
-                    <i className="bi bi-building" style={{ fontSize: '4rem', color: '#6c757d', opacity: 0.5 }}></i>
+                    <i className="bi bi-building-fill" style={{ fontSize: '4rem', color: '#003366', opacity: 0.5 }}></i>
                   </div>
                   <h2 className="mb-3">{stats.departments?.total || 0}</h2>
                   <Link to="/departments" className="btn btn-outline-secondary w-100">
@@ -483,16 +504,16 @@ const Dashboard = () => {
             </div>
 
             {/* Users Section */}
-            <div className="col-md-4 mb-3">
+            <div className="col-md-6 mb-3">
               <div className="card border-danger h-100">
                 <div className="card-header bg-danger text-white">
                   <h5 className="mb-0">
-                    <i className="bi bi-people-fill me-2"></i>Users
+                    <i className="bi bi-person-fill-gear me-2"></i>Users
                   </h5>
                 </div>
                 <div className="card-body text-center">
                   <div className="mb-3">
-                    <i className="bi bi-people-fill" style={{ fontSize: '4rem', color: '#dc3545', opacity: 0.5 }}></i>
+                    <i className="bi bi-person-fill-gear" style={{ fontSize: '4rem', color: '#C41E3A', opacity: 0.5 }}></i>
                   </div>
                   <h2 className="mb-3">{stats.users?.total || 0}</h2>
                   <Link to="/users" className="btn btn-outline-danger w-100">
@@ -969,7 +990,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}  
-      {/* Student Dashboard */}
+      {/* Student Dashboard — Academy disabled
       {user?.role === 'Student' && stats && (
         <div className="row">
           <div className="col-md-6 mb-3">
@@ -1000,6 +1021,7 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+      */}
 
       {/* Progress Report Modal */}
       {showProgressReport && (

@@ -10,24 +10,11 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [serverReady, setServerReady] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // Wake up the backend immediately so it's ready by the time the user submits.
-  // Render free-tier cold-starts can take 30+ seconds; this fires on page load.
   useEffect(() => {
-    let cancelled = false;
-    const warmup = async () => {
-      try {
-        await api.get('/health', { timeout: 60000 });
-      } catch (_) {
-        // Even a failed TCP handshake is enough to wake Render
-      }
-      if (!cancelled) setServerReady(true);
-    };
-    warmup();
-    return () => { cancelled = true; };
+    api.get('/health', { timeout: 60000 }).catch(() => {});
   }, []);
 
   const handleSubmit = async (e) => {
@@ -39,9 +26,7 @@ const Login = () => {
 
     try {
       const result = await login(loginId, password);
-      
-      console.log('Login result:', result);
-      
+
       if (result && result.success) {
         const userStr = localStorage.getItem('user');
         if (userStr) {
@@ -50,24 +35,18 @@ const Login = () => {
             const role = (user.role || '').toString().trim().toLowerCase();
             if (role === 'departmenthead') navigate('/department-dashboard');
             else if (role === 'staff') navigate('/staff-dashboard');
-            else if (role === 'student') navigate('/student');
-            else if (role === 'instructor') navigate('/instructor-dashboard');
             else navigate('/dashboard');
-          } catch (parseError) {
-            console.error('Error parsing user data:', parseError);
+          } catch {
             navigate('/dashboard');
           }
         } else {
           navigate('/dashboard');
         }
       } else {
-        const errorMsg = result?.error || 'Login failed. Please try again.';
-        console.error('Login failed:', errorMsg);
-        setError(errorMsg);
+        setError(result?.error || 'Login failed. Please try again.');
         setLoading(false);
       }
     } catch (err) {
-      console.error('Login exception:', err);
       setError(err.message || 'Login failed. Please try again.');
       setLoading(false);
     }
@@ -78,24 +57,25 @@ const Login = () => {
       <div className="auth-card">
         <div className="text-center mb-4">
           <div className="auth-logo-container">
-            <img 
-              src="/prinstine-logo.png" 
-              alt="Prinstine Group Logo" 
+            <img
+              src="/softwarevala-logo.png"
+              alt="Software Vala Liberia Logo"
               className="auth-logo"
               onError={(e) => {
                 e.target.style.display = 'none';
                 e.target.nextSibling.style.display = 'block';
               }}
             />
-            <i className="bi bi-building text-primary auth-logo-fallback" style={{ fontSize: '3rem', display: 'none' }}></i>
+            <i className="bi bi-building text-primary auth-logo-fallback" style={{ fontSize: '3rem', display: 'none' }} />
           </div>
-          <h2 className="mt-3">Prinstine Management System</h2>
-          <p className="text-muted">Sign in to your account</p>
+          <h2 className="mt-2 mb-0">Software Vala Liberia</h2>
+          <span className="auth-tagline">The Name of Trust</span>
+          <p className="auth-subtitle mb-0">Office Management System</p>
         </div>
 
         {error && (
-          <div className="alert alert-danger" role="alert">
-            <i className="bi bi-exclamation-triangle me-2"></i>
+          <div className="alert alert-danger mb-3" role="alert">
+            <i className="bi bi-shield-exclamation me-2" />
             {error}
           </div>
         )}
@@ -103,7 +83,7 @@ const Login = () => {
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
             <label htmlFor="email" className="form-label">
-              <i className="bi bi-person me-2"></i>Email or Username
+              <i className="bi bi-envelope-fill me-2" />Email or Username
             </label>
             <input
               type="text"
@@ -114,12 +94,13 @@ const Login = () => {
               required
               autoFocus
               autoComplete="username"
+              placeholder="admin@softwarevalalib.app"
             />
           </div>
 
           <div className="mb-3">
             <label htmlFor="password" className="form-label">
-              <i className="bi bi-lock me-2"></i>Password
+              <i className="bi bi-lock-fill me-2" />Password
             </label>
             <div className="input-group">
               <input
@@ -129,6 +110,7 @@ const Login = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                placeholder="Enter your password"
               />
               <button
                 type="button"
@@ -137,52 +119,40 @@ const Login = () => {
                 tabIndex={-1}
                 aria-label={showPassword ? 'Hide password' : 'Show password'}
               >
-                <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                <i className={`bi ${showPassword ? 'bi-eye-slash-fill' : 'bi-eye-fill'}`} />
               </button>
             </div>
           </div>
 
-          <div className="mb-3 d-flex justify-content-between">
+          <div className="mb-4 d-flex justify-content-between align-items-center">
             <div className="form-check">
               <input type="checkbox" className="form-check-input" id="remember" />
-              <label className="form-check-label" htmlFor="remember">
-                Remember me
-              </label>
+              <label className="form-check-label" htmlFor="remember">Remember me</label>
             </div>
-            <Link to="/forgot-password" className="text-decoration-none">
-              Forgot password?
-            </Link>
+            <Link to="/forgot-password">Forgot password?</Link>
           </div>
 
-          <div className="text-center mt-3">
-            <Link to="/verify-certificate" className="text-decoration-none">
-              <i className="bi bi-award me-2"></i>Verify Certificate
-            </Link>
-          </div>
-
-          <button
-            type="submit"
-            className="btn btn-primary w-100 mb-3"
-            disabled={loading}
-          >
+          <button type="submit" className="btn btn-primary w-100" disabled={loading}>
             {loading ? (
               <>
-                <span className="spinner-border spinner-border-sm me-2"></span>
+                <span className="spinner-border spinner-border-sm me-2" />
                 Signing in...
               </>
             ) : (
               <>
-                <i className="bi bi-box-arrow-in-right me-2"></i>
+                <i className="bi bi-box-arrow-in-right me-2" />
                 Sign In
               </>
             )}
           </button>
         </form>
 
+        <div className="auth-footer">
+          <strong>Software Vala Liberia</strong> — Secure office management portal
+        </div>
       </div>
     </div>
   );
 };
 
 export default Login;
-

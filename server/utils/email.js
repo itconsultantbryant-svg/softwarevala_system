@@ -29,7 +29,7 @@ async function sendEmail(to, subject, html, text = null) {
 
   try {
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_FROM || 'noreply@prinstine.com',
+      from: process.env.EMAIL_FROM || 'noreply@softwarevalalib.app',
       to,
       subject,
       text: text || html.replace(/<[^>]*>/g, ''), // Strip HTML for text version
@@ -47,13 +47,13 @@ async function sendEmail(to, subject, html, text = null) {
  * Send OTP for email verification
  */
 async function sendOTP(email, otp) {
-  const subject = 'Email Verification - Prinstine Management System';
+  const subject = 'Email Verification - Software Vala Liberia Management System';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #007BFF;">Email Verification</h2>
-      <p>Thank you for registering with Prinstine Management System.</p>
+      <h2 style="color: #003366;">Email Verification</h2>
+      <p>Thank you for registering with Software Vala Liberia Management System.</p>
       <p>Your verification code is:</p>
-      <div style="background-color: #FFC107; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; margin: 20px 0;">
+      <div style="background-color: #C41E3A; color: white; padding: 20px; text-align: center; font-size: 32px; font-weight: bold; margin: 20px 0;">
         ${otp}
       </div>
       <p>This code will expire in 10 minutes.</p>
@@ -67,13 +67,13 @@ async function sendOTP(email, otp) {
  * Send password reset email
  */
 async function sendPasswordReset(email, resetToken, resetUrl) {
-  const subject = 'Password Reset - Prinstine Management System';
+  const subject = 'Password Reset - Software Vala Liberia Management System';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #007BFF;">Password Reset Request</h2>
+      <h2 style="color: #003366;">Password Reset Request</h2>
       <p>You have requested to reset your password.</p>
       <p>Click the link below to reset your password:</p>
-      <a href="${resetUrl}" style="display: inline-block; background-color: #007BFF; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 20px 0;">Reset Password</a>
+      <a href="${resetUrl}" style="display: inline-block; background-color: #003366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin: 20px 0;">Reset Password</a>
       <p>Or copy this link: ${resetUrl}</p>
       <p>This link will expire in 1 hour.</p>
       <p>If you did not request a password reset, please ignore this email.</p>
@@ -86,11 +86,11 @@ async function sendPasswordReset(email, resetToken, resetUrl) {
  * Send report approval/rejection notification
  */
 async function sendReportNotification(email, reportTitle, status, comments = null) {
-  const subject = `Report ${status} - Prinstine Management System`;
-  const statusColor = status === 'Approved' ? '#28a745' : '#dc3545';
+  const subject = `Report ${status} - Software Vala Liberia Management System`;
+  const statusColor = status === 'Approved' ? '#28a745' : '#C41E3A';
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #007BFF;">Report Status Update</h2>
+      <h2 style="color: #003366;">Report Status Update</h2>
       <p>Your report "<strong>${reportTitle}</strong>" has been <span style="color: ${statusColor}; font-weight: bold;">${status}</span>.</p>
       ${comments ? `<p><strong>Comments:</strong> ${comments}</p>` : ''}
       <p>Please log in to view details.</p>

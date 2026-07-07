@@ -1,6 +1,6 @@
 .topbar {
   background: #fff;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 2px solid #003366;
   padding: 0.75rem 1.5rem;
   position: sticky;
   top: 0;
@@ -33,7 +33,7 @@
 }
 
 .topbar-menu-btn:hover {
-  color: #007bff;
+  color: #003366;
 }
 
 .topbar-logo {
@@ -44,8 +44,8 @@
 }
 
 .topbar-title {
-  color: #495057;
-  font-weight: 600;
+  color: #003366;
+  font-weight: 700;
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -89,14 +89,14 @@
 
 .topbar-notification-btn:hover,
 .topbar-profile-btn:hover {
-  color: #007bff;
+  color: #C41E3A;
 }
 
 .topbar-badge {
   position: absolute;
   top: 0;
   right: 0;
-  background: #dc3545;
+  background: #C41E3A;
   color: white;
   border-radius: 50%;
   width: 18px;
@@ -142,7 +142,17 @@
   justify-content: space-between;
   align-items: center;
   flex-shrink: 0;
-  background: white;
+  background: linear-gradient(135deg, #003366, #002244);
+  color: #fff;
+}
+
+.topbar-dropdown-header h6 {
+  color: #fff;
+  font-weight: 700;
+}
+
+.topbar-dropdown-header .btn-link {
+  color: rgba(255, 255, 255, 0.85) !important;
 }
 
 .topbar-dropdown-body {
@@ -185,8 +195,8 @@
 }
 
 .highlight-item {
-  background-color: #fff3cd !important;
-  border: 2px solid #ffc107 !important;
+  background-color: rgba(196, 30, 58, 0.08) !important;
+  border: 2px solid #C41E3A !important;
   transition: all 0.3s ease;
 }
 

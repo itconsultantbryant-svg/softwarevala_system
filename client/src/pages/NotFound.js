@@ -20,29 +20,28 @@ const NotFound = () => {
   };
 
   return (
-    <div className="container-fluid d-flex align-items-center justify-content-center" style={{ minHeight: '80vh' }}>
-      <div className="text-center">
-        <div className="mb-4">
-          <i className="bi bi-exclamation-triangle text-warning" style={{ fontSize: '5rem' }}></i>
+    <div className="container-fluid sv-page d-flex align-items-center justify-content-center" style={{ minHeight: '75vh' }}>
+      <div className="sv-panel text-center" style={{ maxWidth: '480px', width: '100%' }}>
+        <div className="sv-panel__head justify-content-center">
+          <i className="bi bi-signpost-split-fill" />
+          Page Not Found
         </div>
-        <h1 className="display-1 fw-bold">404</h1>
-        <h2 className="mb-3">Page Not Found</h2>
-        <p className="text-muted mb-4">
-          The page you're looking for doesn't exist or has been moved.
-        </p>
-        <div className="d-flex gap-2 justify-content-center">
-          <button 
-            className="btn btn-primary" 
-            onClick={() => navigate(-1)}
-          >
-            <i className="bi bi-arrow-left me-2"></i>Go Back
-          </button>
-          <Link 
-            to={getDashboardPath()} 
-            className="btn btn-outline-primary"
-          >
-            <i className="bi bi-house-door me-2"></i>Go to Dashboard
-          </Link>
+        <div className="sv-panel__body py-5">
+          <div className="sv-empty-state border-0 py-2">
+            <i className="bi bi-exclamation-triangle-fill" style={{ color: '#C41E3A', opacity: 0.8 }} />
+            <h1 className="display-3 fw-bold text-primary mb-2">404</h1>
+            <p className="text-muted mb-4">
+              The page you&apos;re looking for doesn&apos;t exist or has been moved.
+            </p>
+          </div>
+          <div className="d-flex gap-2 justify-content-center flex-wrap">
+            <button type="button" className="btn btn-outline-secondary" onClick={() => navigate(-1)}>
+              <i className="bi bi-arrow-left me-2" />Go Back
+            </button>
+            <Link to={getDashboardPath()} className="btn btn-primary">
+              <i className="bi bi-speedometer2 me-2" />Go to Dashboard
+            </Link>
+          </div>
         </div>
       </div>
     </div>
@@ -50,4 +49,3 @@ const NotFound = () => {
 };
 
 export default NotFound;
-

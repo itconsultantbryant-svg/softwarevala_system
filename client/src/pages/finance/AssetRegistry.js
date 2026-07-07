@@ -61,7 +61,7 @@ const AssetRegistry = () => {
   ];
 
   const departments = [
-    'Prinstine Group',
+    'Software Vala Liberia',
     'Academy',
     'Microfinance',
     'Consultancy'

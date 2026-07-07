@@ -7,6 +7,10 @@ import ProgressReport from './ProgressReport';
 import PayrollManagement from './PayrollManagement';
 import StudentPaymentManagement from './StudentPaymentManagement';
 import { exportToPDF, exportToExcel, exportToWord, printContent, formatReportForExport, convertReportsToExcel, formatStaffClientReportForExport } from '../../utils/exportUtils';
+import {
+  MetricTile,
+  InfoPanel
+} from '../../components/dashboard/DashboardShell';
 
 const DepartmentHeadDashboard = () => {
   const { user } = useAuth();
@@ -378,369 +382,131 @@ const DepartmentHeadDashboard = () => {
   const isIctDept = department?.name?.toLowerCase().includes('ict');
 
   return (
-    <div className="container-fluid">
+    <div className="container-fluid sv-dashboard">
       <div className="row">
         {isIctDept && (
           <aside className="col-12 col-lg-2 mb-3 mb-lg-0">
             <nav className="list-group list-group-flush shadow-sm border rounded" aria-label="ICT dashboard">
               <div className="list-group-item bg-light py-2 fw-semibold small text-uppercase text-muted">ICT</div>
               <Link to="/ict/audit-trail" className="list-group-item list-group-item-action">
-                <i className="bi bi-journal-text me-2 text-primary"></i>
+                <i className="bi bi-shield-lock-fill me-2 text-primary"></i>
                 System audit trail
               </Link>
             </nav>
           </aside>
         )}
         <div className={isIctDept ? 'col-12 col-lg-10' : 'col-12'}>
-      <div className="row mb-4">
-        <div className="col-12 d-flex justify-content-between align-items-center">
+      <div className="sv-dashboard__hero mb-4">
+        <div className="sv-dashboard__hero-main">
+          <img
+            src="/softwarevala-logo.png"
+            alt="Software Vala Liberia"
+            className="sv-dashboard__hero-logo d-none d-sm-block"
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
           <div>
-            <h1 className="h3 mb-0">
-              {isCombinedDashboard ? 'Combined Dashboard' : 'Department Head Dashboard'}
-            </h1>
+            <h2>{isCombinedDashboard ? 'Department & Staff Dashboard' : 'Department Head Dashboard'}</h2>
             {department && (
-              <div>
-                <p className="text-muted mb-1">
-                  <i className="bi bi-building me-2"></i>{department.name}
-                  {isCombinedDashboard && staffInfo && (
-                    <span className="badge bg-info ms-2">
-                      <i className="bi bi-person-badge me-1"></i>Staff Member
-                    </span>
-                  )}
+              <>
+                <p className="sv-dashboard__hero-sub">
+                  {department.name} — {department.head_name || user.name}
                 </p>
-                <small className="text-muted">
-                  <i className="bi bi-person me-1"></i>{department.head_name || user.name}
-                </small>
-              </div>
+                {isCombinedDashboard && staffInfo && (
+                  <span className="sv-dashboard__hero-badge">
+                    <i className="bi bi-person-badge-fill" />
+                    Combined staff & head access
+                  </span>
+                )}
+              </>
             )}
           </div>
+        </div>
+        <div className="sv-dashboard__hero-actions">
           {department?.name?.toLowerCase().includes('ict') ? (
-            <div className="btn-group" role="group">
-              <button className="btn btn-primary" onClick={() => { setReportType('weekly'); setShowForm(true); }}>
-                <i className="bi bi-calendar-week me-2"></i>Submit Weekly Report
+            <>
+              <button type="button" className="btn btn-light btn-sm" onClick={() => { setReportType('weekly'); setShowForm(true); }}>
+                <i className="bi bi-calendar-week me-1" />Weekly Report
               </button>
-              <button className="btn btn-outline-primary" onClick={() => { setReportType('monthly'); setShowForm(true); }}>
-                <i className="bi bi-calendar-month me-2"></i>Submit Monthly Report
+              <button type="button" className="btn btn-outline-light btn-sm" onClick={() => { setReportType('monthly'); setShowForm(true); }}>
+                <i className="bi bi-calendar-month me-1" />Monthly Report
               </button>
-              <button className="btn btn-success" onClick={() => setShowProgressReport(true)}>
-                <i className="bi bi-graph-up me-2"></i>Progress Report
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setShowProgressReport(true)}>
+                <i className="bi bi-graph-up-arrow me-1" />Progress
               </button>
-            </div>
+            </>
           ) : department?.name?.toLowerCase().includes('marketing') ? (
-            <div className="btn-group-vertical" role="group">
-              <button className="btn btn-primary mb-2" onClick={() => { setReportType('client-specific-activities'); setShowForm(true); }}>
-                <i className="bi bi-person-check me-2"></i>Client-Specific Activities Report
+            <>
+              <button type="button" className="btn btn-light btn-sm" onClick={() => { setReportType('client-specific-activities'); setShowForm(true); }}>
+                <i className="bi bi-people-fill me-1" />Client Activities
               </button>
-              <button className="btn btn-outline-primary mb-2" onClick={() => { setReportType('weekly-client-officer'); setShowForm(true); }}>
-                <i className="bi bi-calendar-week me-2"></i>Weekly Client Officer Report
+              <button type="button" className="btn btn-outline-light btn-sm" onClick={() => { setReportType('weekly-client-officer'); setShowForm(true); }}>
+                <i className="bi bi-calendar-week me-1" />Weekly Officer
               </button>
-              <button className="btn btn-outline-secondary mb-2" onClick={() => { setReportType(null); setShowForm(true); }}>
-                <i className="bi bi-file-text me-2"></i>General Marketing Report
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setShowProgressReport(true)}>
+                <i className="bi bi-graph-up-arrow me-1" />Progress
               </button>
-              <button className="btn btn-success" onClick={() => setShowProgressReport(true)}>
-                <i className="bi bi-graph-up me-2"></i>Progress Report
-              </button>
-            </div>
+            </>
           ) : department?.name?.toLowerCase().includes('finance') ? (
-            <div className="btn-group-vertical" role="group">
-              <button className="btn btn-primary mb-2" onClick={() => { setReportType(null); setShowForm(true); }}>
-                <i className="bi bi-file-text me-2"></i>Submit Report
+            <>
+              <button type="button" className="btn btn-light btn-sm" onClick={() => { setReportType(null); setShowForm(true); }}>
+                <i className="bi bi-file-earmark-plus me-1" />Submit Report
               </button>
-              <button className="btn btn-success mb-2" onClick={() => setShowProgressReport(true)}>
-                <i className="bi bi-graph-up me-2"></i>Progress Report
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setShowProgressReport(true)}>
+                <i className="bi bi-graph-up-arrow me-1" />Progress
               </button>
-              <button className="btn btn-info mb-2" onClick={() => setShowPayrollManagement(true)}>
-                <i className="bi bi-cash-coin me-2"></i>Payroll Management
+              <button type="button" className="btn btn-outline-light btn-sm" onClick={() => setShowPayrollManagement(true)}>
+                <i className="bi bi-cash-stack me-1" />Payroll
               </button>
-              <button className="btn btn-warning" onClick={() => setShowStudentPaymentManagement(true)}>
-                <i className="bi bi-credit-card me-2"></i>Student Payments
-              </button>
-            </div>
-          ) : /academy|elearning|e-learning/.test(department?.name?.toLowerCase() || '') ? (
-            <div className="btn-group-vertical" role="group">
-              <button className="btn btn-primary mb-2" onClick={() => { setReportType(null); setShowForm(true); }}>
-                <i className="bi bi-plus-circle me-2"></i>Submit Report
-              </button>
-              <button className="btn btn-success mb-2" onClick={() => setShowProgressReport(true)}>
-                <i className="bi bi-graph-up me-2"></i>Progress Report
-              </button>
-              <button className="btn btn-warning" onClick={() => setShowStudentPaymentManagement(true)}>
-                <i className="bi bi-credit-card me-2"></i>Student Payments
-              </button>
-            </div>
+            </>
           ) : (
-            <div className="btn-group" role="group">
-              <button className="btn btn-primary" onClick={() => { setReportType(null); setShowForm(true); }}>
-                <i className="bi bi-plus-circle me-2"></i>Submit Report
+            <>
+              <button type="button" className="btn btn-light btn-sm" onClick={() => { setReportType(null); setShowForm(true); }}>
+                <i className="bi bi-plus-circle me-1" />Submit Report
               </button>
-              <button className="btn btn-success" onClick={() => setShowProgressReport(true)}>
-                <i className="bi bi-graph-up me-2"></i>Progress Report
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setShowProgressReport(true)}>
+                <i className="bi bi-graph-up-arrow me-1" />Progress
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Staff Information Section (if combined dashboard) */}
       {isCombinedDashboard && staffInfo && (
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header bg-primary text-white">
-                <h5 className="mb-0">
-                  <i className="bi bi-person-circle me-2"></i>Staff Information
-                </h5>
-              </div>
-              <div className="card-body">
-                <div className="row">
-                  <div className="col-md-3">
-                    <strong>Staff ID:</strong> {staffInfo.staff_id}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Position:</strong> {staffInfo.position || 'N/A'}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Department:</strong> {staffInfo.department || 'N/A'}
-                  </div>
-                  <div className="col-md-3">
-                    <strong>Employment Type:</strong> {staffInfo.employment_type || 'N/A'}
-                  </div>
-                </div>
-                {staffInfo.employment_date && (
-                  <div className="row mt-2">
-                    <div className="col-md-3">
-                      <strong>Employment Date:</strong> {new Date(staffInfo.employment_date).toLocaleDateString()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+        <InfoPanel title="Staff Information" icon="bi-person-vcard-fill">
+          <div className="row g-3">
+            <div className="col-md-3"><strong>Staff ID:</strong> {staffInfo.staff_id}</div>
+            <div className="col-md-3"><strong>Position:</strong> {staffInfo.position || 'N/A'}</div>
+            <div className="col-md-3"><strong>Department:</strong> {staffInfo.department || 'N/A'}</div>
+            <div className="col-md-3"><strong>Employment:</strong> {staffInfo.employment_type || 'N/A'}</div>
           </div>
-        </div>
+        </InfoPanel>
       )}
 
-      {/* Staff Statistics (if combined dashboard) */}
       {isCombinedDashboard && (
-        <div className="row mb-4">
-          <div className="col-md-3">
-            <div className="card text-center border-info">
-              <div className="card-body">
-                <h5 className="card-title text-info">{staffStats.progressReports}</h5>
-                <p className="card-text text-muted mb-0">Progress Reports</p>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card text-center border-warning">
-              <div className="card-body">
-                <h5 className="card-title text-warning">{staffStats.pendingReports}</h5>
-                <p className="card-text text-muted mb-0">Pending Reports</p>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card text-center border-success">
-              <div className="card-body">
-                <h5 className="card-title text-success">{staffStats.approvedReports}</h5>
-                <p className="card-text text-muted mb-0">Approved Reports</p>
-              </div>
-            </div>
-          </div>
-          <div className="col-md-3">
-            <div className="card text-center border-primary">
-              <div className="card-body">
-                <h5 className="card-title text-primary">{staffStats.clientReports}</h5>
-                <p className="card-text text-muted mb-0">Client Reports</p>
-              </div>
-            </div>
-          </div>
+        <div className="sv-metric-grid">
+          <MetricTile icon="bi-journal-check" label="Progress Reports" value={staffStats.progressReports} variant="navy" />
+          <MetricTile icon="bi-hourglass-split" label="Pending" value={staffStats.pendingReports} variant="red" />
+          <MetricTile icon="bi-check2-circle" label="Approved" value={staffStats.approvedReports} variant="green" />
+          <MetricTile icon="bi-file-earmark-person" label="Client Reports" value={staffStats.clientReports} variant="teal" />
         </div>
       )}
 
-      {/* Staff Quick Actions (if combined dashboard) */}
-      {isCombinedDashboard && (
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header">
-                <h5 className="mb-0">
-                  <i className="bi bi-lightning-charge me-2"></i>Staff Quick Actions
-                </h5>
-              </div>
-              <div className="card-body">
-                <div className="btn-group" role="group">
-                  <button
-                    className="btn btn-outline-primary"
-                    onClick={() => setShowProgressReport(true)}
-                  >
-                    <i className="bi bi-graph-up me-2"></i>Submit Progress Report
-                  </button>
-                  <button
-                    className="btn btn-outline-success"
-                    onClick={() => navigate('/staff-client-reports')}
-                  >
-                    <i className="bi bi-file-earmark-text me-2"></i>Client Reports
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Reporting Section - Ready for template integration */}
-      {reportTemplate && (
-        <div className="row mb-4">
-          <div className="col-12">
-            <div className="card">
-              <div className="card-header">
-                <h5 className="mb-0">Reporting Template</h5>
-              </div>
-              <div className="card-body">
-                {/* Template will be integrated here */}
-                <p className="text-muted">Reporting template will be integrated here.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Comprehensive Statistics Section */}
-      <div className="row mb-4">
-        <div className="col-12 mb-3">
-          <h4 className="mb-0">
-            <i className="bi bi-bar-chart me-2"></i>Department Overview
-          </h4>
-          <p className="text-muted small">Key metrics and statistics for your department</p>
-        </div>
+      <div className="sv-dashboard__section-title">
+        <i className="bi bi-bar-chart-line-fill" />
+        Department Overview
       </div>
+      <p className="sv-dashboard__section-desc">Key metrics and statistics for your department</p>
 
-      {/* Primary Statistics Cards */}
-      <div className="row mb-4">
-        <div className="col-md-3 mb-3">
-          <div className="card border-primary h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Total Reports</h6>
-                  <h2 className="mb-0 text-primary">{stats.total}</h2>
-                </div>
-                <div className="bg-primary bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-file-text text-primary" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3 mb-3">
-          <div className="card border-warning h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Pending Review</h6>
-                  <h2 className="mb-0 text-warning">{stats.pending}</h2>
-                </div>
-                <div className="bg-warning bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-clock-history text-warning" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3 mb-3">
-          <div className="card border-success h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Approved</h6>
-                  <h2 className="mb-0 text-success">{stats.approved}</h2>
-                </div>
-                <div className="bg-success bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-check-circle text-success" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="col-md-3 mb-3">
-          <div className="card border-danger h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Rejected</h6>
-                  <h2 className="mb-0 text-danger">{stats.rejected}</h2>
-                </div>
-                <div className="bg-danger bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-x-circle text-danger" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Statistics Row */}
-      <div className="row mb-4">
-        <div className="col-md-4 mb-3">
-          <div className="card border-info h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Department Staff</h6>
-                  <h3 className="mb-0 text-info">{departmentStaff.length}</h3>
-                  <small className="text-muted">Active members</small>
-                </div>
-                <div className="bg-info bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-people text-info" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div className="sv-metric-grid">
+        <MetricTile icon="bi-folder2-open" label="Total Reports" value={stats.total} variant="navy" />
+        <MetricTile icon="bi-hourglass-split" label="Pending Review" value={stats.pending} variant="red" />
+        <MetricTile icon="bi-patch-check-fill" label="Approved" value={stats.approved} variant="green" />
+        <MetricTile icon="bi-x-octagon-fill" label="Rejected" value={stats.rejected} variant="slate" />
+        <MetricTile icon="bi-people-fill" label="Department Staff" value={departmentStaff.length} sub="Active members" variant="teal" />
         {isMarketingDeptHead && (
-          <div className="col-md-4 mb-3">
-            <div className="card border-info h-100 shadow-sm">
-              <div className="card-body">
-                <div className="d-flex justify-content-between align-items-center">
-                  <div>
-                    <h6 className="text-muted text-uppercase small mb-2">Staff Reports Pending</h6>
-                    <h3 className="mb-0 text-info">{staffClientReports.length}</h3>
-                    <small className="text-muted">Awaiting approval</small>
-                  </div>
-                  <div className="bg-info bg-opacity-10 rounded-circle p-3">
-                    <i className="bi bi-file-earmark-check text-info" style={{ fontSize: '1.5rem' }}></i>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
+          <MetricTile icon="bi-file-earmark-check-fill" label="Staff Reports Pending" value={staffClientReports.length} sub="Awaiting approval" variant="teal" />
         )}
-        <div className="col-md-4 mb-3">
-          <div className="card border-warning h-100 shadow-sm">
-            <div className="card-body">
-              <div className="d-flex justify-content-between align-items-center">
-                <div>
-                  <h6 className="text-muted text-uppercase small mb-2">Notifications</h6>
-                  <h3 className="mb-0 text-warning">{unreadNotifications}</h3>
-                  <small className="text-muted">Unread messages</small>
-                </div>
-                <div className="bg-warning bg-opacity-10 rounded-circle p-3">
-                  <i className="bi bi-bell text-warning" style={{ fontSize: '1.5rem' }}></i>
-                </div>
-              </div>
-              {unreadNotifications > 0 && (
-                <div className="mt-2">
-                  <button 
-                    className="btn btn-sm btn-outline-warning w-100"
-                    onClick={() => navigate('/notifications-view')}
-                  >
-                    <i className="bi bi-eye me-1"></i>View Notifications
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <MetricTile icon="bi-bell-fill" label="Notifications" value={unreadNotifications} sub="Unread messages" variant="red" />
       </div>
 
       {/* Department Staff Management Section */}

@@ -15,7 +15,7 @@
   flex: 1;
   margin-left: 260px;
   padding: 0;
-  background-color: #f8f9fa;
+  background-color: #f4f6f9;
   min-height: 100vh;
   transition: margin-left 0.3s ease;
   display: flex;
@@ -27,6 +27,11 @@
 .main-content-wrapper > *:not(.topbar) {
   padding: 20px;
   overflow-x: auto;
+}
+
+.main-content-wrapper .container-fluid {
+  padding-left: 0;
+  padding-right: 0;
 }
 
 .sidebar.collapsed ~ .main-content-wrapper {

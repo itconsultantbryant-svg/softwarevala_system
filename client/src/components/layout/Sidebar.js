@@ -238,6 +238,7 @@ const Sidebar = () => {
 
     // Dashboard - Show appropriate dashboard based on role
     pushSection('Main');
+    /* Academy / student / instructor portals disabled for Software Vala Liberia
     if (userRole === 'student') {
       items.push({ path: '/student', label: 'Student Portal', icon: 'bi-mortarboard', roles: ['Student'], studentPortal: true });
       pushSection('Academics');
@@ -257,22 +258,23 @@ const Sidebar = () => {
         { path: '/instructor-dashboard', label: 'Overview', icon: 'bi-grid', roles: ['Instructor'], instructorPortal: true },
         { path: '/communications', label: 'Message Students', icon: 'bi-chat-dots', roles: ['Instructor'], instructorPortal: true }
       );
-    } else if (userRole === 'staff') {
-      items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-house', roles: ['Staff'] });
+    } else */
+    if (userRole === 'staff') {
+      items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-speedometer2', roles: ['Staff'] });
     } else if (userRole === 'departmenthead') {
-      items.push({ path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building', roles: ['DepartmentHead'] });
+      items.push({ path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building-fill-gear', roles: ['DepartmentHead'] });
     } else {
-      items.push({ path: '/dashboard', label: 'Dashboard', icon: 'bi-house', roles: ['Admin'] });
+      items.push({ path: '/dashboard', label: 'Dashboard', icon: 'bi-speedometer2', roles: ['Admin'] });
     }
 
     if (userRole !== 'instructor') {
       pushSection('Work');
       items.push(
-        { path: '/clients', label: 'Clients', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-        { path: '/reports', label: 'Reports', icon: 'bi-file-text', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-        { path: '/academy', label: 'Academy', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff'], academy: true },
-        { path: '/attendance', label: 'Attendance', icon: 'bi-clock', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-        { path: '/requisitions', label: 'Requisitions', icon: 'bi-clipboard-check', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/clients', label: 'Clients', icon: 'bi-person-vcard-fill', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/reports', label: 'Reports', icon: 'bi-file-earmark-bar-graph-fill', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        // { path: '/academy', label: 'Academy', icon: 'bi-mortarboard', roles: ['Admin', 'DepartmentHead', 'Staff'], academy: true },
+        { path: '/attendance', label: 'Attendance', icon: 'bi-clock-history', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/requisitions', label: 'Requisitions', icon: 'bi-clipboard2-check-fill', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/targets', label: 'Targets', icon: 'bi-bullseye', roles: ['Admin', 'Staff', 'DepartmentHead'] }
       );
     }
@@ -280,18 +282,18 @@ const Sidebar = () => {
     // Finance menus
     pushSection('Finance');
     items.push(
-      { path: '/finance/petty-cash', label: 'Petty Cash', icon: 'bi-cash', roles: ['Admin', 'DepartmentHead'], finance: true },
-      { path: '/finance/petty-cash-ledger', label: 'Petty Cash Ledger', icon: 'bi-journal-text', roles: ['Admin', 'DepartmentHead'], finance: true },
-      { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box', roles: ['Admin', 'DepartmentHead'], finance: true },
-      { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['Admin', 'DepartmentHead'], finance: true }
+      { path: '/finance/petty-cash', label: 'Petty Cash', icon: 'bi-cash-stack', roles: ['Admin', 'DepartmentHead'], finance: true },
+      { path: '/finance/petty-cash-ledger', label: 'Petty Cash Ledger', icon: 'bi-journal-bookmark-fill', roles: ['Admin', 'DepartmentHead'], finance: true },
+      { path: '/finance/assets', label: 'Asset Registry', icon: 'bi-box-seam-fill', roles: ['Admin', 'DepartmentHead'], finance: true },
+      { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive-fill', roles: ['Admin', 'DepartmentHead'], finance: true }
     );
 
     // Common menus for all roles
     pushSection('Communication');
     items.push(
-      { path: '/communications', label: 'Communications', icon: 'bi-chat', roles: ['*'] },
-      { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3', roles: ['*'] },
-      { path: '/notifications-view', label: 'Notifications', icon: 'bi-bell', roles: ['*'], badge: userRole === 'departmenthead' ? unreadFromAdmin : unreadCount }
+      { path: '/communications', label: 'Communications', icon: 'bi-chat-square-dots-fill', roles: ['*'] },
+      { path: '/calendar', label: 'Calendar', icon: 'bi-calendar3-event-fill', roles: ['*'] },
+      { path: '/notifications-view', label: 'Notifications', icon: 'bi-bell-fill', roles: ['*'], badge: userRole === 'departmenthead' ? unreadFromAdmin : unreadCount }
     );
 
     // Staff specific menus
@@ -316,21 +318,21 @@ const Sidebar = () => {
       );
     }
 
-    // Student Payments
-    items.push({ path: '/student-payments', label: 'Student Payments', icon: 'bi-credit-card', roles: ['Admin'], studentPayment: true });
+    // Student Payments (Academy disabled)
+    // items.push({ path: '/student-payments', label: 'Student Payments', icon: 'bi-credit-card', roles: ['Admin'], studentPayment: true });
 
     // Admin-only menus
     if (userRole === 'admin') {
       pushSection('Admin');
       items.push(
-        { path: '/users', label: 'Users', icon: 'bi-people', roles: ['Admin'] },
-        { path: '/departments', label: 'Departments', icon: 'bi-diagram-3', roles: ['Admin'] },
+        { path: '/users', label: 'Users', icon: 'bi-person-fill-gear', roles: ['Admin'] },
+        { path: '/departments', label: 'Departments', icon: 'bi-building-fill-gear', roles: ['Admin'] },
         { path: '/department-reports', label: 'Department Reports', icon: 'bi-file-earmark-text', roles: ['Admin'] },
         { path: '/notifications', label: 'Notification Management', icon: 'bi-bell-fill', roles: ['Admin'] },
-        { path: '/certificates', label: 'Certificates', icon: 'bi-award', roles: ['Admin'] },
-        { path: '/support-tickets', label: 'Support Tickets', icon: 'bi-ticket-perforated', roles: ['Admin'] },
-        { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive', roles: ['Admin'] },
-        { path: '/appraisals', label: 'Appraisals', icon: 'bi-star', roles: ['Admin'] },
+        // { path: '/certificates', label: 'Certificates', icon: 'bi-patch-check-fill', roles: ['Admin'] },
+        { path: '/support-tickets', label: 'Support Tickets', icon: 'bi-ticket-detailed-fill', roles: ['Admin'] },
+        { path: '/archived-documents', label: 'Archived Documents', icon: 'bi-archive-fill', roles: ['Admin'] },
+        { path: '/appraisals', label: 'Appraisals', icon: 'bi-star-fill', roles: ['Admin'] },
         { path: '/ict/audit-trail', label: 'System audit trail', icon: 'bi-journal-text', roles: ['Admin'] }
       );
     }
@@ -338,11 +340,11 @@ const Sidebar = () => {
     // Staff Management (Admin, HR Dept Head, HR Officer)
     // Note: only add staff management link if it exists for your role checks
     pushSection('Management');
-    items.push({ path: '/staff', label: 'Staff Management', icon: 'bi-person-badge', roles: ['Admin', 'HumanResourcesDepartmentHead'], staffManagement: true });
+    items.push({ path: '/staff', label: 'Staff Management', icon: 'bi-people-fill', roles: ['Admin', 'HumanResourcesDepartmentHead'], staffManagement: true });
 
     // Profile for all
     pushSection('Account');
-    items.push({ path: '/profile', label: 'Profile', icon: 'bi-person', roles: ['*'] });
+    items.push({ path: '/profile', label: 'Profile', icon: 'bi-person-circle', roles: ['*'] });
 
     return items;
   }, [user, unreadCount, unreadFromAdmin, hasIctAuditAccess]);
@@ -354,9 +356,23 @@ const Sidebar = () => {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
-        <div className="sidebar-brand" title="Prinstine Management System">
+        <div className="sidebar-brand" title="Software Vala Liberia Management System">
+          <img
+            src="/softwarevala-logo.png"
+            alt="Software Vala Liberia"
+            className="sidebar-logo"
+            onError={(e) => {
+              e.target.style.display = 'none';
+              e.target.nextSibling.style.display = 'block';
+            }}
+          />
           <i className="bi bi-building sidebar-logo-fallback" />
-          <span className="sidebar-brand-text">Prinstine</span>
+          {!collapsed && (
+            <>
+              <span className="sidebar-brand-text">Software Vala Liberia</span>
+              <span className="sidebar-tagline">The Name of Trust</span>
+            </>
+          )}
         </div>
         <button
           type="button"

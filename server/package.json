@@ -1,7 +1,7 @@
 {
   "name": "pms-server",
   "version": "1.0.0",
-  "description": "Prinstine Management System - Backend Server",
+  "description": "Software Vala Liberia Management System - Backend Server",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -9,7 +9,8 @@
     "test": "mocha --timeout 10000"
   },
   "keywords": [
-    "prinstine",
+    "softwarevala",
+    "software vala liberia",
     "management",
     "system"
   ],

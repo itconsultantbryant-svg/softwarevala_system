@@ -1,8 +1,8 @@
-# prinstine-group-office-system
+# Software Vala Liberia Office System
 
-Prinstine Management System (PMS) — office management platform for Prinstine Group of Companies.
+Software Vala Liberia Management System — office management platform for Software Vala Liberia.
 
-Enterprise web application with role-based access control, real-time notifications, academy management, finance modules, and responsive UI.
+Enterprise web application with role-based access control, real-time notifications, finance modules, and responsive UI.
 
 ## Quick start (local)
 
@@ -16,8 +16,14 @@ npm run dev
 
 **Default admin login (change after first login):**
 
-- Email: `admin@prinstine.com`
-- Password: `Admin@123`
+- Email: `admin@softwarevalalib.app`
+- Password: `Admin@123!`
+
+To reset the admin account manually:
+
+```bash
+cd server && node scripts/create-admin.js
+```
 
 ## Tech stack
 
@@ -32,21 +38,8 @@ npm run dev
 ├── client/          # React frontend
 ├── server/          # Express API
 ├── database/        # SQLite DB and migrations
-├── vercel.json      # Vercel build + API proxy to Render
 └── render.yaml      # Render backend blueprint
 ```
-
-## Production deployment
-
-| Service | Platform | Documentation |
-|---------|----------|----------------|
-| Frontend | Vercel | [DEPLOY_VERCEL.md](./DEPLOY_VERCEL.md) |
-| Backend | Render | [DEPLOY_RENDER.md](./DEPLOY_RENDER.md) |
-
-**Live URLs:**
-
-- Frontend: https://prinstinemanagementsystem.com
-- Backend: https://prinstine-pms-backend.onrender.com
 
 ## Environment
 
@@ -57,4 +50,4 @@ npm run dev
 
 ISC
 
-**Prinstine Group of Companies**
+**Software Vala Liberia — The Name of Trust**

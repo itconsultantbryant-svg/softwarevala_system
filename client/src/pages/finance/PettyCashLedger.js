@@ -459,7 +459,7 @@ const PettyCashLedger = () => {
               <div className="modal-body">
                 <div className="row mb-3">
                   <div className="col-md-6">
-                    <strong>Company:</strong> PRINSTINE GROUP OF COMPANIES
+                    <strong>Company:</strong> SOFTWARE VALA LIBERIA
                   </div>
                   <div className="col-md-6">
                     <strong>Custodian:</strong> {selectedLedger.custodian_name}

@@ -29,8 +29,8 @@ const CertificateVerification = () => {
     return (
       <div className="d-flex flex-column justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
         <img 
-          src="/prinstine-logo.png" 
-          alt="Prinstine Group" 
+          src="/softwarevala-logo.png" 
+          alt="Software Vala Liberia" 
           style={{ maxWidth: '200px', height: 'auto', marginBottom: '2rem' }}
           onError={(e) => {
             e.target.style.display = 'none';
@@ -50,8 +50,8 @@ const CertificateVerification = () => {
           <div className="card-body text-center">
             <div className="mb-4">
               <img 
-                src="/prinstine-logo.png" 
-                alt="Prinstine Group" 
+                src="/softwarevala-logo.png" 
+                alt="Software Vala Liberia" 
                 style={{ maxWidth: '150px', height: 'auto' }}
                 onError={(e) => {
                   e.target.style.display = 'none';
@@ -74,8 +74,8 @@ const CertificateVerification = () => {
           <div className="card-body text-center">
             <div className="mb-4">
               <img 
-                src="/prinstine-logo.png" 
-                alt="Prinstine Group" 
+                src="/softwarevala-logo.png" 
+                alt="Software Vala Liberia" 
                 style={{ maxWidth: '200px', height: 'auto' }}
                 onError={(e) => {
                   e.target.style.display = 'none';

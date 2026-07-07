@@ -1,9 +1,9 @@
 {
-  "name": "prinstine-management-system",
+  "name": "softwarevala-management-system",
   "version": "1.0.0",
-  "description": "Comprehensive management system for Prinstine Group of Companies",
+  "description": "Comprehensive management system for Software Vala Liberia",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "dev": "bash START_BOTH_SERVERS.sh",
     "server": "cd server && npm run dev",
     "client": "cd client && npm start",
     "build": "cd client && npm install && npm run build",
@@ -11,7 +11,8 @@
     "install-all": "cd server && npm install && cd ../client && npm install"
   },
   "keywords": [
-    "prinstine",
+    "softwarevala",
+    "software vala liberia",
     "management",
     "system"
   ],

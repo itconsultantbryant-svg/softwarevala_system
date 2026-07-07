@@ -179,7 +179,7 @@ const TopBar = () => {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(title, {
               body: message,
-              icon: '/prinstine-logo.png'
+              icon: '/softwarevala-logo.png'
             });
           }
         };
@@ -377,8 +377,8 @@ const TopBar = () => {
             <i className={`bi ${isSidebarOpen ? 'bi-x-lg' : 'bi-list'}`}></i>
           </button>
           <img 
-            src="/prinstine-logo.png" 
-            alt="Prinstine Group" 
+            src="/softwarevala-logo.png" 
+            alt="Software Vala Liberia" 
             className="topbar-logo"
             onError={(e) => {
               e.target.style.display = 'none';
@@ -398,7 +398,7 @@ const TopBar = () => {
                 setShowProfileMenu(false);
               }}
             >
-              <i className="bi bi-bell"></i>
+              <i className="bi bi-bell-fill"></i>
               {unreadCount > 0 && (
                 <span className="topbar-badge">{unreadCount}</span>
               )}

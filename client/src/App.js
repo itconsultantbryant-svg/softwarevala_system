@@ -16,14 +16,16 @@ import ClientManagement from './pages/clients/ClientManagement';
 import ClientView from './pages/clients/ClientView';
 import PartnerManagement from './pages/partners/PartnerManagement';
 import PartnerView from './pages/partners/PartnerView';
-import AcademyManagement from './pages/academy/AcademyManagement';
-import StudentView from './pages/academy/StudentView';
-import InstructorView from './pages/academy/InstructorView';
-import CourseView from './pages/academy/CourseView';
+// Academy module disabled for Software Vala Liberia
+// import AcademyManagement from './pages/academy/AcademyManagement';
+// import StudentView from './pages/academy/StudentView';
+// import InstructorView from './pages/academy/InstructorView';
+// import CourseView from './pages/academy/CourseView';
 import ReportsManagement from './pages/reports/ReportsManagement';
-import CertificateVerification from './pages/certificates/CertificateVerification';
-import CertificateManagement from './pages/certificates/CertificateManagement';
-import PublicVerification from './pages/certificates/PublicVerification';
+// Certificates disabled for Software Vala Liberia
+// import CertificateVerification from './pages/certificates/CertificateVerification';
+// import CertificateManagement from './pages/certificates/CertificateManagement';
+// import PublicVerification from './pages/certificates/PublicVerification';
 import PublicClaims from './pages/claims/PublicClaims';
 import Profile from './pages/Profile';
 import UserManagement from './pages/users/UserManagement';
@@ -42,7 +44,7 @@ import AssetRegistry from './pages/finance/AssetRegistry';
 import MyReportsHistory from './pages/reports/MyReportsHistory';
 import FinanceRoute from './components/FinanceRoute';
 import StaffRoute from './components/StaffRoute';
-import StudentPaymentRoute from './components/StudentPaymentRoute';
+// import StudentPaymentRoute from './components/StudentPaymentRoute';
 import CallMemoHistory from './pages/callMemos/CallMemoHistory';
 import ProposalHistory from './pages/proposals/ProposalHistory';
 import MeetingHistory from './pages/meetings/MeetingHistory';
@@ -53,17 +55,17 @@ import RequisitionHistory from './pages/requisitions/RequisitionHistory';
 import Targets from './pages/targets/Targets';
 import PettyCash from './pages/finance/PettyCash';
 import Appraisals from './pages/appraisals/Appraisals';
-import StudentPaymentManagement from './pages/departments/StudentPaymentManagement';
-import StudentPortal from './pages/academy/StudentPortal';
-import InstructorDashboard from './pages/academy/InstructorDashboard';
-import StudentClassLinks from './pages/academy/StudentClassLinks';
-import StudentMaterials from './pages/academy/StudentMaterials';
-import StudentAttendance from './pages/academy/StudentAttendance';
-import './pages/academy/StudentPortal.css';
-import StudentCertificates from './pages/academy/StudentCertificates';
-import StudentCourses from './pages/academy/StudentCourses';
-import StudentBilling from './pages/academy/StudentBilling';
-import StudentGrades from './pages/academy/StudentGrades';
+// import StudentPaymentManagement from './pages/departments/StudentPaymentManagement';
+// import StudentPortal from './pages/academy/StudentPortal';
+// import InstructorDashboard from './pages/academy/InstructorDashboard';
+// import StudentClassLinks from './pages/academy/StudentClassLinks';
+// import StudentMaterials from './pages/academy/StudentMaterials';
+// import StudentAttendance from './pages/academy/StudentAttendance';
+// import './pages/academy/StudentPortal.css';
+// import StudentCertificates from './pages/academy/StudentCertificates';
+// import StudentCourses from './pages/academy/StudentCourses';
+// import StudentBilling from './pages/academy/StudentBilling';
+// import StudentGrades from './pages/academy/StudentGrades';
 import NotFound from './pages/NotFound';
 import './App.css';
 
@@ -75,8 +77,10 @@ function App() {
           <div className="App">
             <Routes>
             <Route path="/login" element={<Login />} />
+            {/* Certificate routes disabled
             <Route path="/certificates/verify/:code" element={<CertificateVerification />} />
             <Route path="/verify-certificate" element={<PublicVerification />} />
+            */}
             <Route path="/submit-claim" element={<PublicClaims />} />
               <Route
                 path="/*"
@@ -100,11 +104,15 @@ function App() {
                           <Route path="/clients/view/:id" element={<PrivateRoute><ClientView /></PrivateRoute>} />
                           <Route path="/partners" element={<PartnerManagement />} />
                           <Route path="/partners/view/:id" element={<PartnerView />} />
+                          {/* Academy routes disabled
                           <Route path="/academy" element={<AcademyManagement />} />
                           <Route path="/academy/students/view/:id" element={<StudentView />} />
                           <Route path="/academy/instructors/view/:id" element={<InstructorView />} />
                           <Route path="/academy/courses/view/:id" element={<CourseView />} />
+                          */}
+                          {/* Certificates disabled
                           <Route path="/certificates" element={<PrivateRoute requiredRole="Admin"><CertificateManagement /></PrivateRoute>} />
+                          */}
                           <Route path="/finance/petty-cash" element={<FinanceRoute><PettyCash /></FinanceRoute>} />
                           <Route path="/finance/petty-cash-ledger" element={<FinanceRoute><PettyCashLedger /></FinanceRoute>} />
                           <Route path="/finance/assets" element={<FinanceRoute><AssetRegistry /></FinanceRoute>} />
@@ -128,6 +136,7 @@ function App() {
                           <Route path="/requisitions" element={<PrivateRoute><RequisitionHistory /></PrivateRoute>} />
                           <Route path="/targets" element={<PrivateRoute><Targets /></PrivateRoute>} />
                           <Route path="/profile" element={<Profile />} />
+                          {/* Student / instructor portal routes disabled
                           <Route path="/instructor-dashboard" element={<PrivateRoute requiredRole="Instructor"><InstructorDashboard /></PrivateRoute>} />
                           <Route path="/student" element={<PrivateRoute requiredRole="Student"><StudentPortal /></PrivateRoute>} />
                           <Route path="/student/courses" element={<PrivateRoute requiredRole="Student"><StudentCourses /></PrivateRoute>} />
@@ -138,6 +147,7 @@ function App() {
                           <Route path="/student/certificates" element={<PrivateRoute requiredRole="Student"><StudentCertificates /></PrivateRoute>} />
                           <Route path="/student/billing" element={<PrivateRoute requiredRole="Student"><StudentBilling /></PrivateRoute>} />
                           <Route path="/student-payments" element={<StudentPaymentRoute><StudentPaymentManagement /></StudentPaymentRoute>} />
+                          */}
                           <Route path="*" element={<NotFound />} />
                         </Routes>
                       </div>

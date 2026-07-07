@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import api from '../config/api';
 import { getSocket } from '../config/socket';
 import { normalizeUrl } from '../utils/apiUrl';
+import PageHeader from '../components/layout/PageHeader';
 
 const Profile = () => {
   const { user, updateUser } = useAuth();
@@ -314,13 +315,28 @@ const Profile = () => {
   };
 
   return (
-    <div className="container-fluid">
-      <div className="row">
-        <div className="col-md-8 offset-md-2">
-          <h1 className="h3 mb-4">My Profile</h1>
-          
-          <div className="card">
-            <div className="card-body">
+    <div className="container-fluid sv-page">
+      <div className="row justify-content-center">
+        <div className="col-lg-8">
+          <PageHeader
+            title="My Profile"
+            subtitle={`${user?.name || 'User'} · ${user?.role || ''}`}
+            icon="bi-person-circle"
+            actions={
+              !isEditing ? (
+                <button type="button" className="btn btn-light btn-sm" onClick={() => setIsEditing(true)}>
+                  <i className="bi bi-pencil-fill me-1" />Edit Profile
+                </button>
+              ) : null
+            }
+          />
+
+          <div className="sv-panel">
+            <div className="sv-panel__head">
+              <i className="bi bi-person-vcard-fill" />
+              Account Information
+            </div>
+            <div className="sv-panel__body">
               {/* Profile Image Section */}
               <div className="text-center mb-4">
                 <div className="position-relative d-inline-block">
@@ -329,16 +345,8 @@ const Profile = () => {
                       key={formData.profile_image} // Force re-render when URL changes
                       src={formData.profile_image}
                       alt={formData.name || 'Profile'}
-                      className="img-fluid rounded-circle"
-                      style={{ 
-                        width: 'clamp(96px, 28vw, 150px)', 
-                        height: 'clamp(96px, 28vw, 150px)', 
-                        objectFit: 'cover', 
-                        border: '4px solid #dee2e6', 
-                        display: 'block',
-                        position: 'relative',
-                        zIndex: 2
-                      }}
+                      className="img-fluid sv-profile-avatar"
+                      style={{ display: 'block', position: 'relative', zIndex: 2 }}
                       onError={(e) => {
                         console.error('Profile image failed to load:', formData.profile_image);
                         e.target.style.display = 'none';
@@ -359,19 +367,16 @@ const Profile = () => {
                     />
                   ) : null}
                   <div
-                    className="bg-info rounded-circle d-inline-flex align-items-center justify-content-center profile-placeholder"
+                    className="sv-profile-avatar-placeholder profile-placeholder"
                     style={{
-                      width: 'clamp(96px, 28vw, 150px)',
-                      height: 'clamp(96px, 28vw, 150px)',
                       display: formData.profile_image ? 'none' : 'flex',
-                      border: '4px solid #dee2e6',
                       position: 'absolute',
                       top: 0,
                       left: 0,
                       zIndex: formData.profile_image ? 1 : 2
                     }}
                   >
-                    <i className="bi bi-person" style={{ fontSize: '5rem', color: 'white' }}></i>
+                    <i className="bi bi-person-fill" />
                   </div>
                   {isEditing && (
                     <div className="mt-3">
@@ -424,24 +429,24 @@ const Profile = () => {
 
               {!isEditing ? (
                 <div>
-                  <div className="row mb-3">
-                    <div className="col-md-6">
-                      <label className="form-label text-muted">Full Name</label>
-                      <p className="form-control-plaintext fw-bold">{formData.name || 'N/A'}</p>
+                  <div className="row mb-2">
+                    <div className="col-md-6 sv-detail-row">
+                      <div className="sv-detail-label">Full Name</div>
+                      <div className="sv-detail-value fw-bold">{formData.name || 'N/A'}</div>
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted">Email</label>
-                      <p className="form-control-plaintext">{formData.email || 'N/A'}</p>
+                    <div className="col-md-6 sv-detail-row">
+                      <div className="sv-detail-label">Email</div>
+                      <div className="sv-detail-value">{formData.email || 'N/A'}</div>
                     </div>
                   </div>
                   <div className="row mb-3">
-                    <div className="col-md-6">
-                      <label className="form-label text-muted">Phone</label>
-                      <p className="form-control-plaintext">{formData.phone || 'N/A'}</p>
+                    <div className="col-md-6 sv-detail-row">
+                      <div className="sv-detail-label">Phone</div>
+                      <div className="sv-detail-value">{formData.phone || 'N/A'}</div>
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label text-muted">Role</label>
-                      <p className="form-control-plaintext">
+                    <div className="col-md-6 sv-detail-row">
+                      <div className="sv-detail-label">Role</div>
+                      <div className="sv-detail-value">
                         <span className={`badge bg-${
                           user?.role === 'Admin' ? 'danger' :
                           user?.role === 'Staff' ? 'primary' :
@@ -451,17 +456,8 @@ const Profile = () => {
                         }`}>
                           {user?.role || 'N/A'}
                         </span>
-                      </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="mt-4">
-                    <button
-                      type="button"
-                      className="btn btn-primary"
-                      onClick={() => setIsEditing(true)}
-                    >
-                      <i className="bi bi-pencil me-2"></i>Edit Profile
-                    </button>
                   </div>
                 </div>
               ) : (
@@ -622,14 +618,12 @@ const Profile = () => {
             </div>
           </div>
 
-          {/* Change Password Section */}
-          <div className="card mt-4">
-            <div className="card-header">
-              <h5 className="mb-0">
-                <i className="bi bi-shield-lock me-2"></i>Change Password
-              </h5>
+          <div className="sv-panel">
+            <div className="sv-panel__head">
+              <i className="bi bi-shield-lock-fill" />
+              Security
             </div>
-            <div className="card-body">
+            <div className="sv-panel__body">
               {passwordMessage && (
                 <div className="alert alert-success alert-dismissible fade show" role="alert">
                   <i className="bi bi-check-circle me-2"></i>

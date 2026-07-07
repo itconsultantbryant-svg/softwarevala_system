@@ -360,7 +360,10 @@ async function initializeDatabase() {
         console.log('Seed data loaded');
         
         // Verify admin user was created (check both emails)
-        let adminUser = await db.get('SELECT id, email, role FROM users WHERE email = ?', ['admin@prinstinegroup.org']);
+        let adminUser = await db.get('SELECT id, email, role FROM users WHERE email = ?', ['admin@softwarevalalib.app']);
+        if (!adminUser) {
+          adminUser = await db.get('SELECT id, email, role FROM users WHERE email = ?', ['admin@prinstinegroup.org']);
+        }
         if (!adminUser) {
           adminUser = await db.get('SELECT id, email, role FROM users WHERE email = ?', ['admin@prinstine.com']);
         }
@@ -368,6 +371,38 @@ async function initializeDatabase() {
           console.log('✓ Admin user created successfully:', adminUser.email);
         } else {
           console.error('✗ Admin user was not created!');
+        }
+
+        // Ensure Software Vala Liberia admin credentials
+        const bcrypt = require('bcrypt');
+        const ADMIN_EMAIL = 'admin@softwarevalalib.app';
+        const ADMIN_PASSWORD = 'Admin@123!';
+        let svAdmin = await db.get('SELECT id, email FROM users WHERE email = ?', [ADMIN_EMAIL]);
+        if (!svAdmin) {
+          const legacyAdmin = await db.get(
+            'SELECT id FROM users WHERE email IN (?, ?)',
+            ['admin@prinstinegroup.org', 'admin@prinstine.com']
+          );
+          const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+          if (legacyAdmin) {
+            await db.run('UPDATE users SET email = ?, password_hash = ?, is_active = 1, email_verified = 1 WHERE id = ?', [
+              ADMIN_EMAIL, passwordHash, legacyAdmin.id
+            ]);
+            console.log(`✓ Admin migrated to ${ADMIN_EMAIL}`);
+          } else {
+            await db.run(
+              `INSERT INTO users (email, username, password_hash, role, name, is_active, email_verified)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [ADMIN_EMAIL, 'admin', passwordHash, 'Admin', 'System Administrator', 1, 1]
+            );
+            console.log(`✓ Admin user created: ${ADMIN_EMAIL}`);
+          }
+        } else {
+          const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
+          await db.run('UPDATE users SET password_hash = ?, is_active = 1, email_verified = 1 WHERE email = ?', [
+            passwordHash, ADMIN_EMAIL
+          ]);
+          console.log(`✓ Admin password set for ${ADMIN_EMAIL}`);
         }
       } else {
         console.error('Seed file not found:', seedPath);
@@ -1485,14 +1520,18 @@ async function initializeDatabase() {
       }
       
       // Verify admin user exists, create if missing
-      let adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', ['admin@prinstinegroup.org']);
+      const ADMIN_EMAIL = 'admin@softwarevalalib.app';
+      const ADMIN_PASSWORD = 'Admin@123!';
+      let adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', [ADMIN_EMAIL]);
       if (!adminUser) {
-        // Try the old email
-        adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', ['admin@prinstine.com']);
+        // Migrate from legacy admin emails
+        adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', ['admin@prinstinegroup.org']);
+        if (!adminUser) {
+          adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', ['admin@prinstine.com']);
+        }
         if (adminUser) {
-          // Update to new email
-          await db.run('UPDATE users SET email = ? WHERE id = ?', ['admin@prinstinegroup.org', adminUser.id]);
-          console.log('✓ Admin email updated to admin@prinstinegroup.org');
+          await db.run('UPDATE users SET email = ? WHERE id = ?', [ADMIN_EMAIL, adminUser.id]);
+          console.log(`✓ Admin email updated to ${ADMIN_EMAIL}`);
         }
       }
       
@@ -1500,26 +1539,26 @@ async function initializeDatabase() {
         // Create admin user if it doesn't exist
         console.log('Creating admin user...');
         const bcrypt = require('bcrypt');
-        const passwordHash = await bcrypt.hash('Admin@123', 10);
+        const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
         
         try {
           const result = await db.run(
             `INSERT INTO users (email, username, password_hash, role, name, is_active, email_verified)
              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            ['admin@prinstinegroup.org', 'admin', passwordHash, 'Admin', 'System Administrator', 1, 1]
+            [ADMIN_EMAIL, 'admin', passwordHash, 'Admin', 'System Administrator', 1, 1]
           );
-          console.log('✓ Admin user created: admin@prinstinegroup.org');
+          console.log(`✓ Admin user created: ${ADMIN_EMAIL}`);
           
           // Verify
-          adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', ['admin@prinstinegroup.org']);
+          adminUser = await db.get('SELECT id, email, role, is_active FROM users WHERE email = ?', [ADMIN_EMAIL]);
         } catch (createError) {
           console.error('Error creating admin user:', createError.message);
         }
-      }
-      
-      if (adminUser) {
-        console.log('✓ Admin user found:', adminUser.email, '- Active:', adminUser.is_active);
       } else {
+        console.log('✓ Admin user found:', adminUser.email, '- Active:', adminUser.is_active);
+      }
+
+      if (!adminUser) {
         console.warn('⚠ Admin user not found in database!');
       }
     }
@@ -2486,8 +2525,10 @@ app.use('/api/reports', require('./routes/reportsHistory'));
 app.use('/api/staff', require('./routes/staff'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/partners', require('./routes/partners'));
-app.use('/api/academy', require('./routes/academy'));
-app.use('/api/certificates', require('./routes/certificates'));
+// Academy API disabled for Software Vala Liberia
+// app.use('/api/academy', require('./routes/academy'));
+// Certificates API disabled for Software Vala Liberia
+// app.use('/api/certificates', require('./routes/certificates'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/my-reports-history', require('./routes/reportsHistory'));
 app.use('/api/marketing', require('./routes/marketing'));
@@ -2514,7 +2555,7 @@ app.use('/api/appraisals', require('./routes/appraisals'));
 // Root route - API information
 app.get('/', (req, res) => {
   res.status(200).json({
-    message: 'Prinstine Management System API',
+    message: 'Software Vala Liberia Management System API',
     version: '1.0.0',
     status: 'running',
     timestamp: new Date().toISOString(),

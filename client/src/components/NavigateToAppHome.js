@@ -15,9 +15,11 @@ const NavigateToAppHome = () => {
     case 'Staff':
       return <Navigate to="/staff-dashboard" replace />;
     case 'Student':
-      return <Navigate to="/student" replace />;
+      // Academy disabled — route students to main dashboard
+      return <Navigate to="/dashboard" replace />;
     case 'Instructor':
-      return <Navigate to="/instructor-dashboard" replace />;
+      // Academy disabled — route instructors to main dashboard
+      return <Navigate to="/dashboard" replace />;
     default:
       return <Navigate to="/dashboard" replace />;
   }
