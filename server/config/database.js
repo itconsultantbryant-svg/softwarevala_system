@@ -6,6 +6,12 @@ require('dotenv').config();
 // Check if PostgreSQL is configured
 const USE_POSTGRESQL = !!process.env.DATABASE_URL;
 
+if (!USE_POSTGRESQL && process.env.NODE_ENV === 'production') {
+  console.error('DATABASE_URL is required in production.');
+  console.error('Set the Neon connection string for softwarevala-management before starting the API.');
+  process.exit(1);
+}
+
 // Use absolute path resolution to ensure consistency
 // Always use the root database/pms.db to avoid data loss
 const DB_PATH = process.env.DB_PATH 
