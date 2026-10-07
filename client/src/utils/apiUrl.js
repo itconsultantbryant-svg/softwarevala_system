@@ -2,10 +2,9 @@
  * Centralized API URL utility.
  *
  * Production: API calls use the same-origin "/api" path. Vercel rewrites
- * proxy these to the Render backend server-to-server, avoiding cross-origin
- * requests that some mobile carriers (Orange Liberia) block or throttle.
+ * proxy these to the API host. The API stores data in Neon.
  *
- * Socket.IO still connects directly to Render because Vercel rewrites
+ * Socket.IO still connects directly to the API host because Vercel rewrites
  * cannot proxy WebSocket upgrade handshakes.
  */
 
@@ -34,7 +33,7 @@ export const getApiBaseUrl = () => {
 };
 
 /**
- * Socket.IO connects directly to Render (WebSocket can't go through Vercel rewrites).
+ * Socket.IO connects directly to the API host (WebSocket can't go through Vercel rewrites).
  */
 export const getSocketBaseUrl = () => {
   const socketUrl = (process.env.REACT_APP_SOCKET_URL || '').trim();
@@ -47,7 +46,7 @@ export const getSocketBaseUrl = () => {
 
 /**
  * Base URL (without /api) for file serving (uploads, profile images, etc.)
- * In production, files are served from Render so we use the full Render URL.
+ * In production, uploaded files are served by the API host.
  */
 export const getBaseUrl = () => {
   if (process.env.NODE_ENV === 'production') return RENDER_BACKEND;

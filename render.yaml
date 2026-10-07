@@ -1,5 +1,5 @@
-# Render Blueprint — Software Vala Liberia Management System
-# Dashboard: New → Blueprint → connect this repo → deploy
+# API host blueprint. The database is Neon (softwarevala-management), not a disk file.
+# Set DATABASE_URL from the Neon connection string. Do not put it in the Vercel frontend.
 
 services:
   - type: web
@@ -23,8 +23,6 @@ services:
         value: 10000
       - key: HOST
         value: 0.0.0.0
-      - key: DB_PATH
-        value: /var/data/pms.db
       - key: UPLOADS_DIR
         value: /var/data/uploads
       - key: API_BODY_LIMIT_MB
@@ -51,3 +49,8 @@ services:
         value: noreply@softwarevalalib.app
       - key: DATABASE_URL
         sync: false
+        # Neon connection string for project softwarevala-management, database softwarevala.
+      - key: MARKETING_SYNC_SECRET
+        sync: false
+      - key: PUBLIC_SITE_URL
+        value: https://softwarevalalib.app

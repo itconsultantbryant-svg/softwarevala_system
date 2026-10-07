@@ -1,0 +1,11 @@
+.marketing-page { padding: 8px 4px 32px; }
+.marketing-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.marketing-card { background: #fff; border: 1px solid #e6ebf2; border-top: 3px solid #003366; border-radius: 10px; padding: 14px; }
+.marketing-card strong { display: block; font-size: 1.4rem; color: #003366; }
+.marketing-card span { color: #6c757d; font-size: 0.85rem; }
+.bar-row { display: grid; grid-template-columns: 140px 1fr 40px; gap: 8px; align-items: center; margin-bottom: 6px; font-size: 0.85rem; }
+.bar-track { background: #eef2f6; border-radius: 99px; height: 8px; }
+.bar-fill { background: #003366; height: 8px; border-radius: 99px; }
+.kanban { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 12px; }
+.kanban-col { min-width: 220px; background: #f4f6f9; border-radius: 10px; padding: 8px; }
+.kanban-card { background: #fff; border-radius: 8px; padding: 8px; margin-bottom: 8px; cursor: grab; border: 1px solid #e6ebf2; }

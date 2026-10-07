@@ -38,6 +38,12 @@ import NotificationManagement from './pages/notifications/NotificationManagement
 import Communications from './pages/notifications/Communications';
 import Notifications from './pages/notifications/Notifications';
 import StaffDashboard from './pages/staff/StaffDashboard';
+import SalesOverview from './pages/marketing/SalesOverview';
+import Applications from './pages/marketing/Applications';
+import ApplicationProfile from './pages/marketing/ApplicationProfile';
+import { Agents, AgentProfile } from './pages/marketing/Agents';
+import { LeadsBoard, LeadProfile, Commissions, ContractsPage } from './pages/marketing/Pipeline';
+import { WeeklyReports, PerformancePage, MarketingReports } from './pages/marketing/Operations';
 import StaffClientReports from './pages/staff/StaffClientReports';
 import PettyCashLedger from './pages/finance/PettyCashLedger';
 import AssetRegistry from './pages/finance/AssetRegistry';
@@ -135,6 +141,18 @@ function App() {
                           <Route path="/attendance" element={<PrivateRoute requiredRoles={['Admin', 'Staff', 'DepartmentHead']}><AttendanceHistory /></PrivateRoute>} />
                           <Route path="/requisitions" element={<PrivateRoute><RequisitionHistory /></PrivateRoute>} />
                           <Route path="/targets" element={<PrivateRoute><Targets /></PrivateRoute>} />
+                          <Route path="/marketing/overview" element={<PrivateRoute><SalesOverview /></PrivateRoute>} />
+                          <Route path="/marketing/applications" element={<PrivateRoute><Applications /></PrivateRoute>} />
+                          <Route path="/marketing/applications/:id" element={<PrivateRoute><ApplicationProfile /></PrivateRoute>} />
+                          <Route path="/marketing/agents" element={<PrivateRoute><Agents /></PrivateRoute>} />
+                          <Route path="/marketing/agents/:id" element={<PrivateRoute><AgentProfile /></PrivateRoute>} />
+                          <Route path="/marketing/leads" element={<PrivateRoute><LeadsBoard /></PrivateRoute>} />
+                          <Route path="/marketing/leads/:id" element={<PrivateRoute><LeadProfile /></PrivateRoute>} />
+                          <Route path="/marketing/commissions" element={<PrivateRoute><Commissions /></PrivateRoute>} />
+                          <Route path="/marketing/weekly-reports" element={<PrivateRoute><WeeklyReports /></PrivateRoute>} />
+                          <Route path="/marketing/performance" element={<PrivateRoute><PerformancePage /></PrivateRoute>} />
+                          <Route path="/marketing/reports" element={<PrivateRoute><MarketingReports /></PrivateRoute>} />
+                          <Route path="/marketing/contracts" element={<PrivateRoute><ContractsPage /></PrivateRoute>} />
                           <Route path="/profile" element={<Profile />} />
                           {/* Student / instructor portal routes disabled
                           <Route path="/instructor-dashboard" element={<PrivateRoute requiredRole="Instructor"><InstructorDashboard /></PrivateRoute>} />

@@ -277,6 +277,24 @@ const Sidebar = () => {
         { path: '/requisitions', label: 'Requisitions', icon: 'bi-clipboard2-check-fill', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/targets', label: 'Targets', icon: 'bi-bullseye', roles: ['Admin', 'Staff', 'DepartmentHead'] }
       );
+      pushSection('Marketing & Sales');
+      items.push(
+        { path: '/marketing/overview', label: 'Sales Overview', icon: 'bi-graph-up', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/leads', label: 'Leads', icon: 'bi-funnel', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/clients', label: 'Clients', icon: 'bi-person-vcard', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/contracts', label: 'Contracts', icon: 'bi-file-earmark-text', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/proposals', label: 'Proposals', icon: 'bi-file-earmark-check', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/applications', label: 'Agent Applications', icon: 'bi-inboxes', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/applications?status=SHORTLISTED', label: 'Shortlisted', icon: 'bi-bookmark-check', roles: ['Admin', 'DepartmentHead'] },
+        { path: '/marketing/agents?status=ONBOARDING', label: 'Onboarding', icon: 'bi-list-check', roles: ['Admin', 'DepartmentHead'] },
+        { path: '/marketing/agents?status=ACTIVE', label: 'Active Agents', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/agents?status=SUSPENDED', label: 'Suspended', icon: 'bi-pause-circle', roles: ['Admin', 'DepartmentHead'] },
+        { path: '/marketing/agents?status=TERMINATED', label: 'Former Agents', icon: 'bi-person-x', roles: ['Admin', 'DepartmentHead'] },
+        { path: '/marketing/commissions', label: 'Commissions', icon: 'bi-cash-coin', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/weekly-reports', label: 'Weekly Reports', icon: 'bi-calendar-week', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/performance', label: 'Performance', icon: 'bi-clipboard-data', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/reports', label: 'Marketing Reports', icon: 'bi-bar-chart', roles: ['Admin', 'Staff', 'DepartmentHead'] }
+      );
     }
 
     // Finance menus

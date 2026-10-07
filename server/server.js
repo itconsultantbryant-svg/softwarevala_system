@@ -268,10 +268,10 @@ async function initializeDatabase() {
         console.error('\n❌ Database connection failed!');
         console.error('The system cannot start without a valid database connection.');
         console.error('\n💡 Quick Fix:');
-        console.error('1. Go to Render Dashboard → Your PostgreSQL Database');
-        console.error('2. Copy the "Internal Database URL" (complete URL)');
-        console.error('3. Go to Backend Service → Environment → Update DATABASE_URL');
-        console.error('4. Save and redeploy\n');
+        console.error('1. Open the Neon project softwarevala-management');
+        console.error('2. Copy the connection string for the softwarevala database');
+        console.error('3. Set DATABASE_URL on the API host (never in the Vercel frontend)');
+        console.error('4. Restart the API\n');
         throw dbError; // Exit with error so user knows to fix it
       } else {
         // SQLite connection failure
@@ -313,6 +313,8 @@ async function initializeDatabase() {
     const gradeSubmissionsPath = path.join(__dirname, 'database/migrations/028_grade_submissions.sql');
     const attendanceGeoCoordsPath = path.join(__dirname, 'database/migrations/029_attendance_office_geocoords.sql');
     const certificateAccessWindowsPath = path.join(__dirname, 'database/migrations/030_certificate_access_windows.sql');
+    const marketingAgentsPath = path.join(__dirname, 'database/migrations/035_marketing_agents.sql');
+    const marketingSyncPath = path.join(__dirname, 'database/migrations/036_marketing_agent_sync.sql');
     
     if (tables.length === 0) {
       console.log('Initializing database schema...');
@@ -645,6 +647,18 @@ async function initializeDatabase() {
               }
             }
             console.log('✓ Department head fields migration completed');
+          }
+        }
+      }
+      for (const migrationFile of [marketingAgentsPath, marketingSyncPath]) {
+        if (!fs.existsSync(migrationFile)) continue;
+        const marketingSql = fs.readFileSync(migrationFile, 'utf8');
+        for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
+          try { await db.run(statement); } catch (e) {
+            const msg = (e && e.message) || '';
+            if (!msg.includes('already exists') && !msg.includes('duplicate column') && !msg.includes('UNIQUE constraint')) {
+              console.error('Error executing marketing agent migration:', msg);
+            }
           }
         }
       }
@@ -2441,6 +2455,22 @@ async function initializeDatabase() {
         console.log('✓ cohort certificate access window columns applied');
       }
     }
+
+    for (const migrationFile of [marketingAgentsPath, marketingSyncPath]) {
+      if (!fs.existsSync(migrationFile)) continue;
+      const marketingSql = fs.readFileSync(migrationFile, 'utf8');
+      for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
+        try {
+          await db.run(statement);
+        } catch (e) {
+          const msg = (e && e.message) || '';
+          if (!msg.includes('already exists') && !msg.includes('duplicate column') && !msg.includes('UNIQUE constraint')) {
+            console.error('Error executing marketing agent migration:', msg);
+          }
+        }
+      }
+    }
+    console.log('✓ marketing agent schema verified');
     
     console.log('=== Column verification complete ===\n');
 
@@ -2530,6 +2560,7 @@ app.use('/api/partners', require('./routes/partners'));
 app.use('/api/reports', require('./routes/reports'));
 app.use('/api/my-reports-history', require('./routes/reportsHistory'));
 app.use('/api/marketing', require('./routes/marketing'));
+app.use('/api/marketing-agents', require('./routes/marketingAgents'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/backup', require('./routes/backup'));

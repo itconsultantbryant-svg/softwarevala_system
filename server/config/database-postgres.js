@@ -22,7 +22,6 @@ class PostgreSQLDatabase {
         if (!connectionString.startsWith('postgresql://') && !connectionString.startsWith('postgres://')) {
           console.error('\n❌ Invalid DATABASE_URL format!');
           console.error('URL must start with postgresql:// or postgres://');
-          console.error('Current value:', connectionString.substring(0, 50) + '...');
           reject(new Error('Invalid DATABASE_URL format. Must start with postgresql://'));
           return;
         }
@@ -33,22 +32,10 @@ class PostgreSQLDatabase {
           if (!url.hostname || url.hostname === 'base' || url.hostname.length < 3) {
             console.error('\n❌ Invalid DATABASE_URL hostname!');
             console.error('Hostname is missing or invalid:', url.hostname);
-            console.error('Make sure you copied the COMPLETE Internal Database URL from Render');
-            console.error('It should look like: postgresql://user:pass@dpg-xxxxx-a.region-postgres.render.com:5432/dbname');
-            reject(new Error('Invalid DATABASE_URL hostname. Check that you copied the complete URL.'));
+            console.error('Copy the Neon connection string from the project dashboard.');
+            console.error('It should look like: postgresql://user:pass@ep-xxxx.region.aws.neon.tech/dbname?sslmode=require');
+            reject(new Error('Invalid DATABASE_URL hostname. Check that you copied the complete Neon connection string.'));
             return;
-          }
-          
-          if (!url.port || url.port === '') {
-            console.warn('⚠️  No port specified in DATABASE_URL. Adding default port 5432.');
-            // Fix the URL by adding port if missing
-            // Pattern: postgresql://user:pass@host/db -> postgresql://user:pass@host:5432/db
-            if (connectionString.match(/@([^:\/]+)\/([^\/\s]+)/)) {
-              connectionString = connectionString.replace(/@([^:\/]+)\//, '@$1:5432/');
-              console.log('✓ Fixed DATABASE_URL by adding port 5432');
-            }
-          } else if (url.port !== '5432') {
-            console.warn('⚠️  Unexpected port in DATABASE_URL. Expected 5432, got:', url.port);
           }
           
           console.log('✓ DATABASE_URL format validated');
@@ -62,18 +49,16 @@ class PostgreSQLDatabase {
           return;
         }
         
-        // If the URL contains an IPv6 address, warn user
-        if (connectionString.includes('[') || connectionString.match(/:\/\/([0-9a-f:]+):/i)) {
-          console.warn('⚠️  IPv6 address detected in DATABASE_URL. This may cause connection issues.');
-          console.warn('⚠️  Make sure you are using the INTERNAL Database URL from Render, not External.');
-        }
-        
-        // Configure pool with better connection handling
+        // node-postgres does not implement channel binding; Neon includes it on some strings.
+        connectionString = connectionString
+          .replace(/([?&])channel_binding=[^&]*/g, '$1')
+          .replace(/\?&/g, '?')
+          .replace(/[?&]$/, '');
+
+        const localDatabase = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
         this.pool = new Pool({
           connectionString: connectionString,
-          ssl: connectionString.includes('localhost') || connectionString.includes('127.0.0.1') ? false : {
-            rejectUnauthorized: false
-          },
+          ssl: localDatabase ? false : { rejectUnauthorized: false },
           max: 20, // Maximum number of clients in the pool
           idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 10000, // Increased timeout for network issues
@@ -95,24 +80,14 @@ class PostgreSQLDatabase {
                 console.error('Error message:', err.message);
                 console.error('\n📋 Common Issues & Solutions:');
                 console.error('1. ❌ DATABASE_URL is malformed or incomplete');
-                console.error('   ✅ Fix: Copy the COMPLETE Internal Database URL from Render');
-                console.error('   ✅ It should look like: postgresql://user:pass@dpg-xxxxx-a.region-postgres.render.com:5432/dbname');
+                console.error('   ✅ Fix: Copy the Neon connection string for softwarevala-management');
+                console.error('   ✅ It should look like: postgresql://user:pass@ep-xxxx.region.aws.neon.tech/softwarevala?sslmode=require');
                 console.error('');
-                console.error('2. ❌ Using External Database URL instead of Internal');
-                console.error('   ✅ Fix: Use the "Internal Database URL" (NOT External)');
+                console.error('2. ❌ URL was truncated or partially copied');
+                console.error('   ✅ Fix: Include the user, password, host, database name, and sslmode=require');
                 console.error('');
-                console.error('3. ❌ URL was truncated or partially copied');
-                console.error('   ✅ Fix: Make sure you copied the ENTIRE URL, including:');
-                console.error('      - postgresql:// prefix');
-                console.error('      - username:password');
-                console.error('      - @hostname:5432');
-                console.error('      - /database_name');
-                console.error('');
-                console.error('4. ❌ Database service not running');
-                console.error('   ✅ Fix: Check Render dashboard - database should show "Available"');
-                console.error('');
-                console.error('5. ❌ Services in different regions');
-                console.error('   ✅ Fix: Ensure backend and database are in the SAME region\n');
+                console.error('3. ❌ Neon compute is suspended or the project was paused');
+                console.error('   ✅ Fix: Open the Neon project. The first connection wakes the database.\n');
               }
               
               // Retry logic for transient errors
@@ -368,43 +343,9 @@ class PostgreSQLDatabase {
 
     // Convert INSERT OR IGNORE to INSERT ... ON CONFLICT DO NOTHING
     if (pgSql.toUpperCase().includes('INSERT OR IGNORE')) {
-      // Remove "OR IGNORE" from INSERT statement
       pgSql = pgSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO/gi, 'INSERT INTO');
-      
-      // Find the table name and column list
-      const insertMatch = pgSql.match(/INSERT\s+INTO\s+(\w+)\s*\(([^)]+)\)/i);
-      if (insertMatch) {
-        const tableName = insertMatch[1];
-        const columns = insertMatch[2];
-        
-        // Try to find the primary key column (usually 'id' or first column)
-        // For now, use a generic approach - conflict on all columns or id
-        let conflictColumns = 'id'; // Default to id
-        if (columns.includes('id')) {
-          conflictColumns = 'id';
-        } else {
-          // Use first column as fallback
-          const firstCol = columns.split(',')[0].trim();
-          conflictColumns = firstCol;
-        }
-        
-        // Add ON CONFLICT clause
-        if (pgSql.toUpperCase().includes('VALUES')) {
-          // Insert before VALUES
-          pgSql = pgSql.replace(/\s+VALUES\s+/i, ` ON CONFLICT (${conflictColumns}) DO NOTHING VALUES `);
-        } else if (pgSql.toUpperCase().includes('SELECT')) {
-          // Insert before SELECT
-          pgSql = pgSql.replace(/\s+SELECT\s+/i, ` ON CONFLICT (${conflictColumns}) DO NOTHING SELECT `);
-        } else {
-          // Add at the end if neither VALUES nor SELECT
-          pgSql += ` ON CONFLICT (${conflictColumns}) DO NOTHING`;
-        }
-      } else {
-        // If no column list, try simpler pattern
-        const simpleMatch = pgSql.match(/INSERT\s+INTO\s+(\w+)/i);
-        if (simpleMatch) {
-          pgSql = pgSql.replace(/\s+VALUES\s+/i, ' ON CONFLICT DO NOTHING VALUES ');
-        }
+      if (!/ON CONFLICT/i.test(pgSql)) {
+        pgSql = pgSql.replace(/;?\s*$/, ' ON CONFLICT DO NOTHING');
       }
     }
 

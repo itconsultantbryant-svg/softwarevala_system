@@ -1,69 +1,71 @@
-# Deploy on Render — Software Vala Liberia
+# Vercel and Neon connection
 
-## Prerequisites
+The React app stays on Vercel. Office data is stored in Neon, not in a SQLite file.
 
-- GitHub repo: `https://github.com/itconsultantbryant-svg/softwarevala_system`
-- `render.yaml` at the repository root (required for Blueprint deploy)
+| Piece | Where it lives |
+| --- | --- |
+| Frontend | Vercel project for `client/` |
+| API | Node server. It reads `DATABASE_URL` and is the only process that talks to Neon. |
+| Database | Neon project `softwarevala-management` |
 
-## 1. Create the backend (Blueprint)
+Neon project:
 
-1. Open [Render Dashboard](https://dashboard.render.com) → **New** → **Blueprint**.
-2. Connect `itconsultantbryant-svg/softwarevala_system` and select branch **main**.
-3. Render reads `render.yaml` and creates **softwarevala-backend** with a 10GB persistent disk.
-4. After the blueprint is created, set these in the service **Environment** (if not already set):
-   - `FRONTEND_URL` — your frontend URL (Vercel or Render static site), e.g. `https://your-app.vercel.app`
-   - `JWT_SECRET` — long random string (auto-generated if using Blueprint)
-   - `ENCRYPTION_KEY` — 32+ character secret (auto-generated if using Blueprint)
-   - `EMAIL_*` — optional, for password reset / notifications
-   - `DATABASE_URL` — optional; leave unset to use SQLite on `/var/data/pms.db`
+- Project ID: `cold-hall-48525485`
+- Branch: `main` (`br-ancient-poetry-b7duxng3`)
+- Database: `softwarevala`
+- Role: `softwarevala_app`
+- Region: `aws-us-east-1`
+- Direct host: `ep-cool-term-b7rbppkd.c-13.us-east-1.aws.neon.tech`
+- Pooled host: `ep-cool-term-b7rbppkd-pooler.c-13.us-east-1.aws.neon.tech`
 
-5. Deploy. When finished, note the backend URL, e.g. `https://softwarevala-backend.onrender.com`.
+The website and academy database is a different Neon project, `softwarevalalib-web`. Do not point this API at that project.
 
-## 2. Verify backend
+## 1. Copy the connection string
+
+1. Open [Neon](https://console.neon.tech) → **softwarevala-management** → **Connect**.
+2. Choose the `softwarevala` database and the `softwarevala_app` role.
+3. For this long-running API, copy the **direct** connection string (the host does not contain `-pooler`).
+4. Keep `sslmode=require`.
+
+The string looks like:
+
+```text
+postgresql://softwarevala_app:PASSWORD@ep-cool-term-b7rbppkd.c-13.us-east-1.aws.neon.tech/softwarevala?sslmode=require
+```
+
+Do not commit it, and do not create `REACT_APP_DATABASE_URL` or any `VITE_` / `NEXT_PUBLIC_` copy.
+
+## 2. Give the string to the API only
+
+On the API host environment:
+
+- `DATABASE_URL` = the Neon connection string
+- `FRONTEND_URL` = the Vercel site origin, with no trailing slash
+- `JWT_SECRET` and `ENCRYPTION_KEY` = the existing production secrets
+- `MARKETING_SYNC_SECRET` = the same server-only key used by the application portal
+
+Local development uses `server/.env`. If `DATABASE_URL` is unset, the API falls back to SQLite for local work only.
+
+The first boot against an empty Neon database runs the SQL migrations and creates `admin@softwarevalalib.app`.
+
+## 3. Vercel frontend
+
+The frontend is already deployed. It does not receive `DATABASE_URL`.
+
+`client/vercel.json` proxies `/api/*` to the API host:
+
+```text
+https://softwarevala-backend.onrender.com/api/:path*
+```
+
+Leave that rewrite pointed at the API. Vercel cannot open a Postgres connection for the browser, and a rewrite cannot carry the WebSocket used for live notifications. `REACT_APP_SOCKET_URL` may be set to the same API origin if the default host changes.
+
+After the API is using Neon, redeploy the API so the new `DATABASE_URL` is loaded. The Vercel site does not need a new database setting.
+
+## 4. Confirm
 
 ```text
 GET https://softwarevala-backend.onrender.com/api/health
 ```
 
-Expected: `{ "status": "ok" }`
-
-Default admin (created on first boot):
-
-- Email: `admin@softwarevalalib.app`
-- Password: `Admin@123!`
-
-## 3. Connect the frontend
-
-### Option A — Vercel (recommended)
-
-1. Deploy `client/` on Vercel.
-2. Set environment variable:
-   - `REACT_APP_API_URL=https://softwarevala-backend.onrender.com`
-3. Update `client/vercel.json` API proxy `destination` to the same Render URL if you use `/api` rewrites.
-4. Set `FRONTEND_URL` on Render to your Vercel URL and redeploy the backend.
-
-### Option B — Same Render service (full stack)
-
-The blueprint build also runs `client` build; if `client/build` exists, the API serves the React app from the same URL.
-
-## 4. Persistent data (SQLite)
-
-- Database file: `/var/data/pms.db`
-- Uploads: `/var/data/uploads`
-
-To restore an existing database, use Render Shell and copy your `pms.db` to `/var/data/pms.db`, then restart the service.
-
-## 5. PostgreSQL (optional)
-
-1. Create a Render PostgreSQL instance.
-2. Copy the **Internal Database URL** into `DATABASE_URL` on **softwarevala-backend**.
-3. Redeploy — the server runs migrations on startup.
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| Blueprint file not found | Ensure `render.yaml` is on branch `main` at repo root |
-| Health check fails | Check logs; confirm `PORT` is set and service listens on `0.0.0.0` |
-| CORS errors | Set `FRONTEND_URL` to exact frontend origin (no trailing slash) |
-| Login fails | Run `node scripts/create-admin.js` via Render Shell or redeploy fresh |
+Then sign in on the Vercel site. New records are written to Neon project `softwarevala-management`.

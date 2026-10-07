@@ -37,20 +37,15 @@ cd server && node scripts/create-admin.js
 ```
 ├── client/          # React frontend
 ├── server/          # Express API
-├── database/        # SQLite DB and migrations
-└── render.yaml      # Render backend blueprint
+├── database/        # SQL migrations
+└── render.yaml      # API host settings. Database is Neon.
 ```
 
-## Production deployment (Render)
+## Production
 
-| Step | Action |
-|------|--------|
-| 1 | Push `render.yaml` on branch `main` |
-| 2 | Render → **New** → **Blueprint** → connect this repo |
-| 3 | Set `FRONTEND_URL` to your frontend URL after deploy |
-| 4 | Health check: `https://softwarevala-backend.onrender.com/api/health` |
+The React app is on Vercel. Application data is in the Neon project `softwarevala-management`, database `softwarevala`. The API reads `DATABASE_URL` on the server. Do not put that URL in the Vercel frontend.
 
-See [DEPLOY_RENDER.md](./DEPLOY_RENDER.md) for full instructions.
+See [DEPLOY_RENDER.md](./DEPLOY_RENDER.md) for the Vercel and Neon connection steps.
 
 ## Environment
 
