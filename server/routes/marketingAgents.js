@@ -102,8 +102,9 @@ router.post('/sync/applications', syncLimiter, async (req, res) => {
     if (referenceKey || externalId) {
       const existing = await db.get(
         `SELECT reference FROM marketing_agent_applications
-         WHERE reference = ? OR external_id = ? OR reference = ?`,
-        [referenceKey, externalId, externalId]
+         WHERE reference = ? OR external_id = ?
+         LIMIT 1`,
+        [referenceKey || externalId, externalId || referenceKey]
       );
       if (existing) {
         return res.json({ success: true, applicationReference: existing.reference, syncStatus: 'ALREADY_SYNCED' });

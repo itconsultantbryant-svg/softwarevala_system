@@ -78,7 +78,7 @@ app.use((req, res, next) => {
   }
 
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Referer, Accept');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Origin, Referer, Accept, x-marketing-sync-key');
   res.header('Access-Control-Max-Age', '86400');
 
   // Keep connections alive for slow mobile carriers (Orange, Lonestar MTN)
