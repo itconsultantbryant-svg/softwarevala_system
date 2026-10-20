@@ -208,9 +208,11 @@ async function initializeDatabase() {
       console.log('Created database directory:', dbDir);
     }
     
-    // Log the database path being used
+    // SQLite path is only relevant for local development.
     const dbPath = process.env.DB_PATH || path.resolve(__dirname, '../../database/pms.db');
-    console.log('Using database path:', dbPath);
+    if (!process.env.DATABASE_URL) {
+      console.log('Using database path:', dbPath);
+    }
 
     const quoteIdent = (value) => `"${String(value).replace(/"/g, '""')}"`;
     const normalizeLegacyPrimaryKeyConstraints = async () => {
@@ -2540,8 +2542,7 @@ async function initializeDatabase() {
   }
 }
 
-// Lightweight health-check — wakes Render from cold-start, no auth needed
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+// Health check is registered after the routes below (database-aware).
 
 // Routes
 app.use('/api/audit-logs', require('./routes/auditLogs'));
@@ -2604,10 +2605,29 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check - MUST be before 404 handler
-app.get('/api/health', (req, res) => {
-  console.log('=== HEALTH CHECK HIT ===');
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+// Health check - MUST be before 404 handler. Verifies the Neon connection.
+app.get('/api/health', async (req, res) => {
+  const startedAt = Date.now();
+  let database = 'up';
+  let databaseError = null;
+  try {
+    await Promise.race([
+      db.ping(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Database health check timed out')), 10000))
+    ]);
+  } catch (error) {
+    database = 'down';
+    databaseError = error.message;
+  }
+  const payload = {
+    status: database === 'up' ? 'ok' : 'degraded',
+    database,
+    latencyMs: Date.now() - startedAt,
+    timestamp: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime())
+  };
+  if (databaseError) payload.databaseError = databaseError;
+  res.status(database === 'up' ? 200 : 503).json(payload);
 });
 
 // Simple POST test endpoint (BEFORE body parser to test)
@@ -2789,8 +2809,10 @@ async function startServer() {
     await initializeDatabase();
     await syncApprovedProgressReportsToTargets();
 
-    // Start periodic database checkpointing for data persistence
-    startPeriodicCheckpoint();
+    // WAL checkpoints only apply to the local SQLite fallback.
+    if (!process.env.DATABASE_URL) {
+      startPeriodicCheckpoint();
+    }
     
     // Bind 0.0.0.0 so Render/cloud health checks can reach the app. Use HOST=127.0.0.1 locally if needed.
     const host = process.env.HOST || '0.0.0.0';

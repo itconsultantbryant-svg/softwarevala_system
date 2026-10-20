@@ -40,15 +40,21 @@ router.get('/stats', authenticateToken, async (req, res) => {
         { sql: 'SELECT COUNT(*) as count FROM certificates' }
       ]);
 
-      const fullTimeResult = await safeQuery('SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', ['Full-time']);
-      const partTimeResult = await safeQuery('SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', ['Part-time']);
-      const internshipResult = await safeQuery('SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', ['Internship']);
-      const activeClientsResult = await safeQuery('SELECT COUNT(*) as count FROM clients WHERE status = ?', ['Active']);
-      const withLoansResult = await safeQuery('SELECT COUNT(*) as count FROM clients WHERE loan_amount > 0');
-      const enrollmentsResult = await safeQuery('SELECT COUNT(*) as count FROM enrollments WHERE status = ?', ['Enrolled']);
-      const totalReportsResult = await safeQuery('SELECT COUNT(*) as count FROM department_reports');
-      const totalMarketingResult = await safeQuery('SELECT COUNT(*) as count FROM marketing_plans');
-      const activePartnersResult = await safeQuery('SELECT COUNT(*) as count FROM partners WHERE status = ?', ['Active']);
+      const [
+        fullTimeResult, partTimeResult, internshipResult, activeClientsResult,
+        withLoansResult, enrollmentsResult, totalReportsResult, totalMarketingResult,
+        activePartnersResult
+      ] = await safeQueryAll([
+        { sql: 'SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', params: ['Full-time'] },
+        { sql: 'SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', params: ['Part-time'] },
+        { sql: 'SELECT COUNT(*) as count FROM staff WHERE employment_type = ?', params: ['Internship'] },
+        { sql: 'SELECT COUNT(*) as count FROM clients WHERE status = ?', params: ['Active'] },
+        { sql: 'SELECT COUNT(*) as count FROM clients WHERE loan_amount > 0' },
+        { sql: 'SELECT COUNT(*) as count FROM enrollments WHERE status = ?', params: ['Enrolled'] },
+        { sql: 'SELECT COUNT(*) as count FROM department_reports' },
+        { sql: 'SELECT COUNT(*) as count FROM marketing_plans' },
+        { sql: 'SELECT COUNT(*) as count FROM partners WHERE status = ?', params: ['Active'] }
+      ]);
 
       stats = {
         staff: {

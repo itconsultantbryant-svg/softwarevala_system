@@ -1,5 +1,14 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 require('dotenv').config();
+
+// Preserve the value shapes the application was built around with SQLite:
+// COUNT()/SUM() come back as numbers and dates/timestamps as strings.
+types.setTypeParser(20, (value) => parseInt(value, 10)); // int8 / COUNT()
+types.setTypeParser(1700, (value) => parseFloat(value)); // numeric / money
+types.setTypeParser(1082, (value) => value); // date
+types.setTypeParser(1083, (value) => value); // time
+types.setTypeParser(1114, (value) => value); // timestamp without time zone
+types.setTypeParser(1184, (value) => value); // timestamp with time zone
 
 // PostgreSQL Database Connection
 class PostgreSQLDatabase {
@@ -8,6 +17,10 @@ class PostgreSQLDatabase {
   }
 
   connect() {
+    if (this.pool) {
+      return Promise.resolve(this.pool);
+    }
+
     return new Promise((resolve, reject) => {
       if (!process.env.DATABASE_URL) {
         reject(new Error('DATABASE_URL environment variable is not set'));
@@ -59,50 +72,56 @@ class PostgreSQLDatabase {
         this.pool = new Pool({
           connectionString: connectionString,
           ssl: localDatabase ? false : { rejectUnauthorized: false },
-          max: 20, // Maximum number of clients in the pool
-          idleTimeoutMillis: 30000,
-          connectionTimeoutMillis: 10000, // Increased timeout for network issues
-          // Force IPv4 if IPv6 is causing issues
-          // Note: This is handled at the OS level, but we can add retry logic
+          max: 10, // Enough concurrency without holding Neon compute open
+          idleTimeoutMillis: 10000, // Recycle idle sockets before Neon drops them
+          connectionTimeoutMillis: 15000,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10000,
+          application_name: 'softwarevala-api',
+          query_timeout: 60000,
+          statement_timeout: 60000
+        });
+
+        // Never let an idle client error crash the API (Neon can drop idle sockets).
+        this.pool.on('error', (err) => {
+          console.error('[PostgreSQL] idle client error:', err.code || '', err.message);
         });
 
         // Test connection with retry logic
-        const testConnection = (retries = 3) => {
-          this.pool.query('SELECT NOW()', (err, result) => {
-            if (err) {
-              console.error('PostgreSQL connection error:', err.message);
+        const testConnection = async (retries = 3) => {
+          try {
+            const result = await this._query('SELECT NOW() AS now');
+            console.log('✓ Connected to PostgreSQL database');
+            console.log('✓ Database time:', result.rows[0].now);
+            resolve(this.pool);
+          } catch (err) {
+            console.error('PostgreSQL connection error:', err.message);
+            console.error('Error code:', err.code);
+
+            // Provide helpful error messages
+            if (err.code === 'ENETUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'EADDRNOTAVAIL') {
+              console.error('\n❌ PostgreSQL Connection Failed!');
               console.error('Error code:', err.code);
-              
-              // Provide helpful error messages
-              if (err.code === 'ENETUNREACH' || err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND') {
-                console.error('\n❌ PostgreSQL Connection Failed!');
-                console.error('Error code:', err.code);
-                console.error('Error message:', err.message);
-                console.error('\n📋 Common Issues & Solutions:');
-                console.error('1. ❌ DATABASE_URL is malformed or incomplete');
-                console.error('   ✅ Fix: Copy the Neon connection string for softwarevala-management');
-                console.error('   ✅ It should look like: postgresql://user:pass@ep-xxxx.region.aws.neon.tech/softwarevala?sslmode=require');
-                console.error('');
-                console.error('2. ❌ URL was truncated or partially copied');
-                console.error('   ✅ Fix: Include the user, password, host, database name, and sslmode=require');
-                console.error('');
-                console.error('3. ❌ Neon compute is suspended or the project was paused');
-                console.error('   ✅ Fix: Open the Neon project. The first connection wakes the database.\n');
-              }
-              
-              // Retry logic for transient errors
-              if (retries > 0 && (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT')) {
-                console.log(`Retrying connection... (${retries} attempts remaining)`);
-                setTimeout(() => testConnection(retries - 1), 2000);
-              } else {
-                reject(err);
-              }
-            } else {
-              console.log('✓ Connected to PostgreSQL database');
-              console.log('✓ Database time:', result.rows[0].now);
-              resolve(this.pool);
+              console.error('Error message:', err.message);
+              console.error('\n📋 Common Issues & Solutions:');
+              console.error('1. ❌ DATABASE_URL is malformed or incomplete');
+              console.error('   ✅ Fix: Copy the Neon connection string for softwarevala-management');
+              console.error('   ✅ It should look like: postgresql://user:pass@ep-xxxx.region.aws.neon.tech/softwarevala?sslmode=require');
+              console.error('');
+              console.error('2. ❌ URL was truncated or partially copied');
+              console.error('   ✅ Fix: Include the user, password, host, database name, and sslmode=require');
+              console.error('');
+              console.error('3. ❌ Neon compute is suspended or the project was paused');
+              console.error('   ✅ Fix: Open the Neon project. The first connection wakes the database.\n');
             }
-          });
+
+            if (retries > 0 && this._isTransient(err)) {
+              console.log(`Retrying connection... (${retries} attempts remaining)`);
+              setTimeout(() => testConnection(retries - 1), 2000);
+            } else {
+              reject(err);
+            }
+          }
         };
         
         testConnection();
@@ -111,6 +130,35 @@ class PostgreSQLDatabase {
         reject(error);
       }
     });
+  }
+
+  _isTransient(error) {
+    if (!error) return false;
+    const code = String(error.code || '');
+    if (['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EADDRNOTAVAIL', 'ENETUNREACH', 'EPIPE', '57P01', '57P02', '57P03'].includes(code)) {
+      return true;
+    }
+    return /connection terminated|connection reset|timeout exceeded when trying to connect|server closed the connection/i.test(String(error.message || ''));
+  }
+
+  async _query(text, params = []) {
+    if (!this.pool) throw new Error('Database not connected');
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        return await this.pool.query(text, params);
+      } catch (error) {
+        lastError = error;
+        if (!this._isTransient(error) || attempt === 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  }
+
+  async ping() {
+    await this._query('SELECT 1');
+    return true;
   }
 
   close() {
@@ -136,7 +184,7 @@ class PostgreSQLDatabase {
     try {
       // Convert SQLite syntax to PostgreSQL
       const pgSql = this.convertSQLiteToPostgres(sql, params);
-      const result = await this.pool.query(pgSql, params);
+      const result = await this._query(pgSql, params);
       return result.rows;
     } catch (err) {
       // If table doesn't exist, return empty array instead of error
@@ -158,7 +206,7 @@ class PostgreSQLDatabase {
 
     try {
       const pgSql = this.convertSQLiteToPostgres(sql);
-      const result = await this.pool.query(pgSql, params);
+      const result = await this._query(pgSql, params);
       return result.rows[0] || null;
     } catch (err) {
       // If table doesn't exist, return null instead of error
@@ -201,14 +249,14 @@ class PostgreSQLDatabase {
       const tableToSync = insertTable;
 
       try {
-        await this.pool.query(
+        await this._query(
           `SELECT setval(pg_get_serial_sequence('${tableToSync}', 'id'), (SELECT COALESCE(MAX(id), 1) FROM ${tableToSync}))`
         );
       } catch (syncErr) {
         // Fallback: handle renamed-table constraints (e.g., users_new_pkey on users table)
         if (tableName !== tableToSync) {
           try {
-            await this.pool.query(
+            await this._query(
               `SELECT setval(pg_get_serial_sequence('${tableName}', 'id'), (SELECT COALESCE(MAX(id), 1) FROM ${tableName}))`
             );
           } catch (fallbackErr) {
@@ -222,7 +270,7 @@ class PostgreSQLDatabase {
       }
 
       try {
-        return await this.pool.query(pgSqlText, sqlParams);
+        return await this._query(pgSqlText, sqlParams);
       } catch (retryErr) {
         return null;
       }
@@ -237,7 +285,7 @@ class PostgreSQLDatabase {
         console.log('📝 Converted SQL (first 150):', pgSql.substring(0, 150));
       }
       
-      const result = await this.pool.query(pgSql, params);
+      const result = await this._query(pgSql, params);
       
       // Return format compatible with SQLite
       // For INSERT statements, PostgreSQL returns the inserted row via RETURNING clause
@@ -318,12 +366,60 @@ class PostgreSQLDatabase {
       pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
     }
 
-    // Convert SQLite parameter placeholders (?) to PostgreSQL ($1, $2, etc.)
-    // This must be done AFTER sqlite_master conversion
-    if (pgSql.includes('?')) {
-      let paramIndex = 1;
-      pgSql = pgSql.replace(/\?/g, () => `$${paramIndex++}`);
-    }
+    // SQLite date/time helpers → PostgreSQL equivalents.
+    // Keep relative-interval forms first so date('now', '+N day') is not
+    // mistaken for the generic date(expression, '+N day') form.
+    const unitMap = {
+      day: 'day', days: 'day',
+      week: 'week', weeks: 'week',
+      month: 'month', months: 'month',
+      year: 'year', years: 'year'
+    };
+    const relative = (_match, amount, unit) =>
+      `(CURRENT_DATE + INTERVAL '${amount} ${unitMap[String(unit).toLowerCase()]}')`;
+
+    pgSql = pgSql.replace(
+      /date\(\s*'now'\s*,\s*'([+-]?\d+)\s*(day|days|week|weeks|month|months|year|years)'\s*\)/gi,
+      relative
+    );
+    pgSql = pgSql.replace(
+      /date\(\s*"now"\s*,\s*'([+-]?\d+)\s*(day|days|week|weeks|month|months|year|years)'\s*\)/gi,
+      relative
+    );
+    pgSql = pgSql.replace(
+      /date\(\s*(\$[0-9]+|'[^']*'|[A-Za-z_][\w.]*)\s*,\s*'([+-]?\d+)\s*(day|days|week|weeks|month|months|year|years)'\s*\)/gi,
+      (_match, expression, amount, unit) =>
+        `(CAST(${expression} AS DATE) + INTERVAL '${amount} ${unitMap[String(unit).toLowerCase()]}')`
+    );
+    pgSql = pgSql.replace(/\bdate\(\s*'now'\s*\)/gi, 'CURRENT_DATE');
+    pgSql = pgSql.replace(/\bdate\(\s*"now"\s*\)/gi, 'CURRENT_DATE');
+    pgSql = pgSql.replace(/\bdatetime\(\s*'now'\s*\)/gi, 'NOW()');
+    pgSql = pgSql.replace(/\bdatetime\(\s*"now"\s*\)/gi, 'NOW()');
+    pgSql = pgSql.replace(/\btime\(\s*'now'\s*\)/gi, 'LOCALTIME');
+    pgSql = pgSql.replace(/\btime\(\s*"now"\s*\)/gi, 'LOCALTIME');
+
+    const strftimeParts = {
+      Y: 'YEAR', m: 'MONTH', d: 'DAY',
+      H: 'HOUR', M: 'MINUTE', S: 'SECOND'
+    };
+    pgSql = pgSql.replace(
+      /strftime\(\s*'%([YmdHMS])'\s*,\s*([^)]+)\)/gi,
+      (_match, token, expression) => `EXTRACT(${strftimeParts[token] || strftimeParts[token.toUpperCase()] || 'YEAR'} FROM ${expression})`
+    );
+    pgSql = pgSql.replace(
+      /strftime\(\s*'%Y-%m'\s*,\s*([^)]+)\)/gi,
+      (_match, expression) => `to_char(${expression}, 'YYYY-MM')`
+    );
+
+    // SQLite-only transaction modifier; plain BEGIN is valid PostgreSQL.
+    pgSql = pgSql.replace(/\bBEGIN\s+IMMEDIATE\b/gi, 'BEGIN');
+
+    // PostgreSQL supports IF NOT EXISTS for ADD COLUMN, so startup migrations
+    // can rerun safely without relying on error handling.
+    pgSql = pgSql.replace(
+      /(\bALTER\s+TABLE\s+[\w".]+\s+ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)/gi,
+      '$1IF NOT EXISTS '
+    );
 
     // Convert PRAGMA table_info to PostgreSQL
     if (pgSql.includes('PRAGMA table_info')) {

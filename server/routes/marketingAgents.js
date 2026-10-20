@@ -102,8 +102,8 @@ router.post('/sync/applications', syncLimiter, async (req, res) => {
     if (referenceKey || externalId) {
       const existing = await db.get(
         `SELECT reference FROM marketing_agent_applications
-         WHERE reference = ? OR external_id = ? OR (? IS NOT NULL AND reference = ?)`,
-        [referenceKey, externalId, externalId, externalId]
+         WHERE reference = ? OR external_id = ? OR reference = ?`,
+        [referenceKey, externalId, externalId]
       );
       if (existing) {
         return res.json({ success: true, applicationReference: existing.reference, syncStatus: 'ALREADY_SYNCED' });
@@ -1125,40 +1125,48 @@ router.post('/policies/:id/activate', authenticateToken, svc.requirePerm('commis
 
 router.get('/reports/overview', authenticateToken, svc.requirePerm('reports.view'), async (req, res) => {
   try {
-    const applications = await db.get('SELECT COUNT(*) AS c FROM marketing_agent_applications');
-    const selected = await db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status IN ('SELECTED','ONBOARDING')`);
-    const activeAgents = await db.get(`SELECT COUNT(*) AS c FROM marketing_agents WHERE status = 'ACTIVE'`);
-    const leads = await db.get('SELECT COUNT(*) AS c FROM sales_leads');
-    const qualified = await db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status IN ('QUALIFIED','MEETING_SCHEDULED','PROPOSAL_PREPARATION','PROPOSAL_SENT','NEGOTIATION','WON')`);
-    const meetings = await db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'MEETING_SCHEDULED'`);
-    const proposals = await db.get('SELECT COUNT(*) AS c FROM sales_proposals');
-    const contracts = await db.get(`SELECT COUNT(*) AS c FROM sales_contracts WHERE status IN ('ACTIVE','COMPLETED')`);
-    const collected = await db.get(`SELECT COALESCE(SUM(amount),0) AS total FROM client_cash_payments WHERE status = 'VERIFIED'`);
-    const earned = await db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status NOT IN ('CANCELLED')`);
-    const paid = await db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status = 'PAID'`);
-    const sectors = await db.all(`SELECT COALESCE(industry,'Unspecified') AS label, COUNT(*) AS count FROM sales_leads GROUP BY industry`);
-    const channels = await db.all(`SELECT COALESCE(source,'Unknown') AS label, COUNT(*) AS count FROM marketing_agent_applications GROUP BY source`);
-    const overdue = await db.all(`SELECT id, lead_number, company_name, next_follow_up FROM sales_leads WHERE next_follow_up IS NOT NULL AND date(next_follow_up) < date('now') AND status NOT IN ('WON','LOST')`);
-    const expiring = await db.all(
-      `SELECT id, full_name, agent_code, engagement_end_date FROM marketing_agents
-       WHERE status = 'ACTIVE' AND engagement_end_date IS NOT NULL
-         AND date(engagement_end_date) <= date('now', '+30 day')`
-    );
-    const awaitingReview = await db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status IN ('NEW','UNDER_REVIEW')`);
-    const shortlisted = await db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status = 'SHORTLISTED'`);
-    const newLeads = await db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'NEW'`);
-    const won = await db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'WON'`);
-    const commissionPending = await db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status IN ('CALCULATED','UNDER_REVIEW','APPROVED','PAYMENT_SCHEDULED','HELD')`);
-    const pipeline = await db.all(`SELECT status AS label, COUNT(*) AS count FROM sales_leads GROUP BY status`);
-    const byAgent = await db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COUNT(l.id) AS count FROM sales_leads l LEFT JOIN marketing_agents a ON a.id = l.referral_agent_id GROUP BY a.agent_code`);
-    const applicationTrend = await db.all(`SELECT date(COALESCE(submitted_at, created_at)) AS label, COUNT(*) AS count FROM marketing_agent_applications GROUP BY label ORDER BY label`);
-    const revenueByAgent = await db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COALESCE(SUM(pay.amount),0) AS count FROM marketing_agents a LEFT JOIN sales_contracts c ON c.referral_agent_id = a.id LEFT JOIN client_cash_payments pay ON pay.contract_id = c.id AND pay.status = 'VERIFIED' GROUP BY a.id`);
-    const commissionTrend = await db.all(`SELECT substr(created_at,1,7) AS label, COALESCE(SUM(final_commission),0) AS count FROM commissions GROUP BY label`);
-    const awaitingList = await db.all(`SELECT id, reference, full_name, status FROM marketing_agent_applications WHERE status IN ('NEW','UNDER_REVIEW') ORDER BY submitted_at DESC LIMIT 8`);
-    const interviewsToday = await db.all(`SELECT i.id, i.interview_time, a.full_name FROM marketing_agent_interviews i JOIN marketing_agent_applications a ON a.id = i.application_id WHERE date(i.interview_date) = date('now') AND i.status = 'SCHEDULED'`);
-    const pendingCommissions = await db.all(`SELECT id, commission_number, final_commission, status FROM commissions WHERE status IN ('CALCULATED','UNDER_REVIEW') ORDER BY created_at DESC LIMIT 8`);
+    const [
+      applications, selected, activeAgents, leads, qualified, meetings, proposals, contracts,
+      collected, earned, paid, sectors, channels, overdue, expiring, awaitingReview,
+      shortlisted, newLeads, won, commissionPending, pipeline, byAgent, applicationTrend,
+      revenueByAgent, commissionTrend, awaitingList, interviewsToday, pendingCommissions,
+      activeForAlerts
+    ] = await Promise.all([
+      db.get('SELECT COUNT(*) AS c FROM marketing_agent_applications'),
+      db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status IN ('SELECTED','ONBOARDING')`),
+      db.get(`SELECT COUNT(*) AS c FROM marketing_agents WHERE status = 'ACTIVE'`),
+      db.get('SELECT COUNT(*) AS c FROM sales_leads'),
+      db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status IN ('QUALIFIED','MEETING_SCHEDULED','PROPOSAL_PREPARATION','PROPOSAL_SENT','NEGOTIATION','WON')`),
+      db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'MEETING_SCHEDULED'`),
+      db.get('SELECT COUNT(*) AS c FROM sales_proposals'),
+      db.get(`SELECT COUNT(*) AS c FROM sales_contracts WHERE status IN ('ACTIVE','COMPLETED')`),
+      db.get(`SELECT COALESCE(SUM(amount),0) AS total FROM client_cash_payments WHERE status = 'VERIFIED'`),
+      db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status NOT IN ('CANCELLED')`),
+      db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status = 'PAID'`),
+      db.all(`SELECT COALESCE(industry,'Unspecified') AS label, COUNT(*) AS count FROM sales_leads GROUP BY industry`),
+      db.all(`SELECT COALESCE(source,'Unknown') AS label, COUNT(*) AS count FROM marketing_agent_applications GROUP BY source`),
+      db.all(`SELECT id, lead_number, company_name, next_follow_up FROM sales_leads WHERE next_follow_up IS NOT NULL AND date(next_follow_up) < date('now') AND status NOT IN ('WON','LOST')`),
+      db.all(
+        `SELECT id, full_name, agent_code, engagement_end_date FROM marketing_agents
+         WHERE status = 'ACTIVE' AND engagement_end_date IS NOT NULL
+           AND date(engagement_end_date) <= date('now', '+30 day')`
+      ),
+      db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status IN ('NEW','UNDER_REVIEW')`),
+      db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications WHERE status = 'SHORTLISTED'`),
+      db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'NEW'`),
+      db.get(`SELECT COUNT(*) AS c FROM sales_leads WHERE status = 'WON'`),
+      db.get(`SELECT COALESCE(SUM(final_commission),0) AS total FROM commissions WHERE status IN ('CALCULATED','UNDER_REVIEW','APPROVED','PAYMENT_SCHEDULED','HELD')`),
+      db.all(`SELECT status AS label, COUNT(*) AS count FROM sales_leads GROUP BY status`),
+      db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COUNT(l.id) AS count FROM sales_leads l LEFT JOIN marketing_agents a ON a.id = l.referral_agent_id GROUP BY a.agent_code`),
+      db.all(`SELECT date(COALESCE(submitted_at, created_at)) AS label, COUNT(*) AS count FROM marketing_agent_applications GROUP BY label ORDER BY label`),
+      db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COALESCE(SUM(pay.amount),0) AS count FROM marketing_agents a LEFT JOIN sales_contracts c ON c.referral_agent_id = a.id LEFT JOIN client_cash_payments pay ON pay.contract_id = c.id AND pay.status = 'VERIFIED' GROUP BY a.id`),
+      db.all(`SELECT substr(created_at,1,7) AS label, COALESCE(SUM(final_commission),0) AS count FROM commissions GROUP BY label`),
+      db.all(`SELECT id, reference, full_name, status FROM marketing_agent_applications WHERE status IN ('NEW','UNDER_REVIEW') ORDER BY submitted_at DESC LIMIT 8`),
+      db.all(`SELECT i.id, i.interview_time, a.full_name FROM marketing_agent_interviews i JOIN marketing_agent_applications a ON a.id = i.application_id WHERE date(i.interview_date) = date('now') AND i.status = 'SCHEDULED'`),
+      db.all(`SELECT id, commission_number, final_commission, status FROM commissions WHERE status IN ('CALCULATED','UNDER_REVIEW') ORDER BY created_at DESC LIMIT 8`),
+      db.all(`SELECT id, full_name, agent_code, engagement_end_date FROM marketing_agents WHERE status = 'ACTIVE' AND engagement_end_date IS NOT NULL`)
+    ]);
     const today = new Date();
-    const activeForAlerts = await db.all(`SELECT id, full_name, agent_code, engagement_end_date FROM marketing_agents WHERE status = 'ACTIVE' AND engagement_end_date IS NOT NULL`);
     for (const agent of activeForAlerts) {
       const days = Math.ceil((new Date(agent.engagement_end_date) - today) / 86400000);
       const window = days <= 0 ? 'expired' : days <= 7 ? '7' : days <= 14 ? '14' : days <= 30 ? '30' : null;

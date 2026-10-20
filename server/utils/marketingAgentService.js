@@ -147,6 +147,20 @@ function verifySyncKey(headerValue) {
 }
 
 async function nextSequence(seqKey) {
+  if (process.env.DATABASE_URL) {
+    // A single statement keeps the increment atomic on PostgreSQL. A pooled
+    // BEGIN/COMMIT pair would not necessarily use the same connection.
+    const row = await db.get(
+      `INSERT INTO marketing_id_sequences (seq_key, next_number)
+       VALUES (?, 2)
+       ON CONFLICT (seq_key) DO UPDATE
+         SET next_number = marketing_id_sequences.next_number + 1
+       RETURNING next_number - 1 AS number`,
+      [seqKey]
+    );
+    return Number(row.number);
+  }
+
   await db.run('BEGIN IMMEDIATE');
   try {
     const row = await db.get('SELECT next_number FROM marketing_id_sequences WHERE seq_key = ?', [seqKey]);

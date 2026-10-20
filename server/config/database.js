@@ -32,6 +32,9 @@ class Database {
   }
 
   connect() {
+    if (this.db) {
+      return Promise.resolve(this.db);
+    }
     return new Promise((resolve, reject) => {
       // Ensure database directory exists
       const dbDir = path.dirname(DB_PATH);
@@ -97,6 +100,14 @@ class Database {
         }
       });
     });
+  }
+
+  async ping() {
+    if (!this.db) throw new Error('Database not connected');
+    await new Promise((resolve, reject) => {
+      this.db.get('SELECT 1 AS ok', (err) => (err ? reject(err) : resolve()));
+    });
+    return true;
   }
 
   close() {
@@ -220,35 +231,16 @@ class Database {
   }
 }
 
-// Export appropriate database instance
+// Export the selected database instance. Connection is opened by the caller
+// (server.js or a script) so startup has a single, awaited connection attempt.
 let dbInstance;
 
 if (USE_POSTGRESQL) {
-  // Use PostgreSQL if DATABASE_URL is set
-  try {
-    const PostgreSQLDatabase = require('./database-postgres');
-    dbInstance = PostgreSQLDatabase;
-    console.log('✓ PostgreSQL database module loaded');
-    
-    // Test connection and fallback to SQLite if it fails
-    dbInstance.connect().catch((error) => {
-      console.error('\n❌ PostgreSQL connection failed!');
-      console.error('Error:', error.message);
-      console.error('\n⚠️  Falling back to SQLite for now.');
-      console.error('⚠️  SQLite is only a local fallback. Production data lives in Neon.');
-      console.error('⚠️  Fix DATABASE_URL and restart the API.\n');
-      
-      // Fallback to SQLite
-      dbInstance = new Database();
-      console.log('Using SQLite database as fallback');
-    });
-  } catch (error) {
-    console.error('Failed to load PostgreSQL module:', error.message);
-    console.error('Falling back to SQLite. Make sure pg package is installed: npm install pg');
-    dbInstance = new Database();
-  }
+  const PostgreSQLDatabase = require('./database-postgres');
+  dbInstance = PostgreSQLDatabase;
+  console.log('✓ PostgreSQL database module loaded');
 } else {
-  // Use SQLite for local development
+  // Use SQLite for local development only.
   dbInstance = new Database();
 }
 
