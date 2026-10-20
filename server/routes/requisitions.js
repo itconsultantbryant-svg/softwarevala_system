@@ -7,11 +7,12 @@ const { archiveDocumentFromActivity } = require('./archivedDocuments');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { getUploadsRoot } = require('../utils/uploadsRoot');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/requisitions');
+    const uploadDir = path.join(getUploadsRoot(), 'requisitions');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -536,7 +537,7 @@ router.post('/', authenticateToken, upload.single('document'), async (req, res) 
       if (req.file) {
         const fs = require('fs');
         const path = require('path');
-        const filePath = path.join(__dirname, '../../uploads/requisitions', req.file.filename);
+        const filePath = path.join(getUploadsRoot(), 'requisitions', req.file.filename);
         try {
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);

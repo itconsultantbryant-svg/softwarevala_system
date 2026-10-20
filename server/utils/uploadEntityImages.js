@@ -9,12 +9,11 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 
-const ALLOWED_TYPES = ['staff', 'student', 'instructor', 'client', 'partner', 'user'];
-const BASE_DIR = path.join(__dirname, '../../uploads/entity-images');
+const ensureUploadDir = require('./ensureUploadDir');
+const { getUploadsRoot } = require('./uploadsRoot');
 
-if (!fs.existsSync(BASE_DIR)) {
-  fs.mkdirSync(BASE_DIR, { recursive: true });
-}
+const ALLOWED_TYPES = ['staff', 'student', 'instructor', 'client', 'partner', 'user'];
+const BASE_DIR = ensureUploadDir(path.join(getUploadsRoot(), 'entity-images'));
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {

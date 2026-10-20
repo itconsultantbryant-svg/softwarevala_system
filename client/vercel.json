@@ -7,7 +7,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://softwarevala-backend.onrender.com/api/:path*"
+      "destination": "https://br-ancient-poetry-b7duxng3-softwarevalaapi.compute.c-13.us-east-1.aws.neon.tech/api/:path*"
     },
     {
       "source": "/(.*)",

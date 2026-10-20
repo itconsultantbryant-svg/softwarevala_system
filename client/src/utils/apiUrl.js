@@ -2,17 +2,17 @@
  * Centralized API URL utility.
  *
  * Production: API calls use the same-origin "/api" path. Vercel rewrites
- * proxy these to the API host. The API stores data in Neon.
+ * proxy these to the Neon Function. The function stores data in Neon Postgres.
  *
- * Socket.IO still connects directly to the API host because Vercel rewrites
- * cannot proxy WebSocket upgrade handshakes.
+ * Socket.IO still connects directly to the function host because Vercel
+ * rewrites cannot proxy WebSocket upgrade handshakes.
  */
 
 function trimTrailingSlashes(s) {
   return (s || '').replace(/\/+$/, '');
 }
 
-const RENDER_BACKEND = 'https://softwarevala-backend.onrender.com';
+const NEON_FUNCTION_ORIGIN = 'https://br-ancient-poetry-b7duxng3-softwarevalaapi.compute.c-13.us-east-1.aws.neon.tech';
 
 /**
  * API base URL.
@@ -38,7 +38,7 @@ export const getApiBaseUrl = () => {
 export const getSocketBaseUrl = () => {
   const socketUrl = (process.env.REACT_APP_SOCKET_URL || '').trim();
   if (socketUrl) return trimTrailingSlashes(socketUrl);
-  if (process.env.NODE_ENV === 'production') return RENDER_BACKEND;
+  if (process.env.NODE_ENV === 'production') return NEON_FUNCTION_ORIGIN;
   const raw = (process.env.REACT_APP_API_URL || '').trim();
   if (raw) return trimTrailingSlashes(raw).replace(/\/api\/?$/, '');
   return 'http://localhost:3006';
@@ -49,7 +49,7 @@ export const getSocketBaseUrl = () => {
  * In production, uploaded files are served by the API host.
  */
 export const getBaseUrl = () => {
-  if (process.env.NODE_ENV === 'production') return RENDER_BACKEND;
+  if (process.env.NODE_ENV === 'production') return NEON_FUNCTION_ORIGIN;
   const apiUrl = getApiBaseUrl();
   if (!apiUrl) return '';
   return apiUrl.replace(/\/api\/?$/, '');

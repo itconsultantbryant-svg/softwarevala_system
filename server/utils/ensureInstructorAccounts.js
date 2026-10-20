@@ -1,7 +1,7 @@
 /**
  * Repair instructor login accounts on startup (production PostgreSQL / SQLite).
  */
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 const db = require('../config/database');
 const { generateInstructorId } = require('./academyIds');
 

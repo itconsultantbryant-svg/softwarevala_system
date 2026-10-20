@@ -5,11 +5,12 @@ const { authenticateToken } = require('../utils/auth');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { getUploadsRoot } = require('../utils/uploadsRoot');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/archived-documents');
+    const uploadDir = path.join(getUploadsRoot(), 'archived-documents');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }

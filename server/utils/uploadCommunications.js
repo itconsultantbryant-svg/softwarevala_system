@@ -2,11 +2,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure uploads/communications directory exists
-const uploadsDir = path.join(__dirname, '../../uploads/communications');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Ensure uploads/communications directory exists (no-op warning on stateless hosts)
+const ensureUploadDir = require('./ensureUploadDir');
+const { getUploadsRoot } = require('./uploadsRoot');
+const uploadsDir = ensureUploadDir(path.join(getUploadsRoot(), 'communications'));
 
 // Configure storage for communication attachments
 const storage = multer.diskStorage({

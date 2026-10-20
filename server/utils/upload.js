@@ -2,17 +2,11 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 
-// Ensure profile-images directory exists for permanent storage
-const profileImagesDir = path.join(__dirname, '../../uploads/profile-images');
-if (!fs.existsSync(profileImagesDir)) {
-  fs.mkdirSync(profileImagesDir, { recursive: true });
-}
-
-// Ensure general uploads directory exists (for backward compatibility)
-const uploadsDir = path.join(__dirname, '../../uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Ensure upload directories exist (no-op warning on stateless hosts)
+const ensureUploadDir = require('./ensureUploadDir');
+const { getUploadsRoot } = require('./uploadsRoot');
+const profileImagesDir = ensureUploadDir(path.join(getUploadsRoot(), 'profile-images'));
+const uploadsDir = ensureUploadDir(getUploadsRoot());
 
 // Configure storage for profile images - stored permanently in dedicated directory
 const storage = multer.diskStorage({

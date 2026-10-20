@@ -14,13 +14,12 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-// Render (and most hosts) sit behind a reverse proxy — required for correct HTTPS / client IP
+// Neon Functions sit behind a reverse proxy — required for correct HTTPS / client IP
 app.set('trust proxy', 1);
 
 const server = http.createServer(app);
 const allowedSocketOrigins = [
   process.env.FRONTEND_URL,
-  'https://softwarevala-backend.onrender.com',
   'http://localhost:3000',
   'http://localhost:3001',
   'http://127.0.0.1:3000'
@@ -37,7 +36,6 @@ const io = socketIo(server, {
     origin: function (origin, callback) {
       // Allow production domain and other allowed origins
       if (!origin || 
-          origin.includes('onrender.com') ||
           origin.includes('vercel.app') ||
           origin.includes('softwarevalalib.app') ||
           origin.includes('localhost') || 
@@ -67,7 +65,7 @@ const PORT = process.env.PORT || 3006;
 
 // CORS — work across ISPs and mobile carriers (Orange, MTN, etc.)
 // Never use Access-Control-Allow-Origin: * together with Allow-Credentials: true (browser rejects it).
-// Echo the request Origin when present so any legitimate frontend URL (Render preview, custom domain) works.
+// Echo the request Origin when present so any legitimate frontend URL (Vercel preview, custom domain) works.
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin) {
@@ -123,43 +121,56 @@ const auditHttpLogger = require('./middleware/auditHttpLogger');
 app.use('/api', attachAuditUserFromToken);
 app.use('/api', auditHttpLogger);
 
-// Keep uploads on a persistent path in production (for Render: /var/data/uploads)
+// File uploads use UPLOADS_DIR when set. On Neon Functions this is /tmp, which
+// is writable but ephemeral; a persistent Neon Object Storage bucket is the
+// production-grade next step for long-lived files.
 const uploadsRoot = path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '../uploads'));
-const legacyUploadsPath = path.resolve(path.join(__dirname, '../uploads'));
 
-if (!fs.existsSync(uploadsRoot)) {
-  fs.mkdirSync(uploadsRoot, { recursive: true });
-}
+if (!process.env.NEON_FUNCTIONS) {
+  const legacyUploadsPath = path.resolve(path.join(__dirname, '../uploads'));
 
-// Many modules still reference ../uploads directly.
-// Create/update a symlink so those paths resolve to persistent storage.
-try {
-  if (legacyUploadsPath !== uploadsRoot) {
-    if (fs.existsSync(legacyUploadsPath)) {
-      const stat = fs.lstatSync(legacyUploadsPath);
-      if (!stat.isSymbolicLink()) {
-        fs.renameSync(legacyUploadsPath, `${legacyUploadsPath}.legacy-${Date.now()}`);
-      } else {
-        fs.unlinkSync(legacyUploadsPath);
-      }
-    }
-    fs.symlinkSync(uploadsRoot, legacyUploadsPath, 'dir');
+  if (!fs.existsSync(uploadsRoot)) {
+    fs.mkdirSync(uploadsRoot, { recursive: true });
   }
-} catch (err) {
-  console.warn('Uploads symlink setup warning:', err.message);
+
+  // Many modules still reference ../uploads directly.
+  // Create/update a symlink so those paths resolve to persistent storage.
+  try {
+    if (legacyUploadsPath !== uploadsRoot) {
+      if (fs.existsSync(legacyUploadsPath)) {
+        const stat = fs.lstatSync(legacyUploadsPath);
+        if (!stat.isSymbolicLink()) {
+          fs.renameSync(legacyUploadsPath, `${legacyUploadsPath}.legacy-${Date.now()}`);
+        } else {
+          fs.unlinkSync(legacyUploadsPath);
+        }
+      }
+      fs.symlinkSync(uploadsRoot, legacyUploadsPath, 'dir');
+    }
+  } catch (err) {
+    console.warn('Uploads symlink setup warning:', err.message);
+  }
+
+  // Ensure permanent storage dirs exist (entity-images: student/instructor/staff profile photos)
+  const entityImagesDir = path.join(uploadsRoot, 'entity-images');
+  if (!fs.existsSync(entityImagesDir)) {
+    fs.mkdirSync(entityImagesDir, { recursive: true });
+  }
+  const certificatesUploadDir = path.join(uploadsRoot, 'certificates');
+  if (!fs.existsSync(certificatesUploadDir)) {
+    fs.mkdirSync(certificatesUploadDir, { recursive: true });
+  }
+} else {
+  try {
+    if (!fs.existsSync(uploadsRoot)) {
+      fs.mkdirSync(uploadsRoot, { recursive: true });
+    }
+  } catch (err) {
+    console.warn('Uploads directory unavailable:', err.message);
+  }
 }
 
-// Ensure permanent storage dirs exist (entity-images: student/instructor/staff profile photos)
-const entityImagesDir = path.join(uploadsRoot, 'entity-images');
-if (!fs.existsSync(entityImagesDir)) {
-  fs.mkdirSync(entityImagesDir, { recursive: true });
-}
-const certificatesUploadDir = path.join(uploadsRoot, 'certificates');
-if (!fs.existsSync(certificatesUploadDir)) {
-  fs.mkdirSync(certificatesUploadDir, { recursive: true });
-}
-
-// Serve uploaded files
+// Serve uploaded files (ephemeral on Neon Functions, persistent on a disk host)
 app.use('/uploads', express.static(uploadsRoot));
 app.use('/uploads/claims', express.static(path.join(uploadsRoot, 'claims')));
 app.use('/uploads/communications', express.static(path.join(uploadsRoot, 'communications')));
@@ -201,11 +212,13 @@ app.use('/uploads/requisitions', express.static(path.join(uploadsRoot, 'requisit
 // Initialize database
 async function initializeDatabase() {
   try {
-    // Ensure database directory exists (use root database folder)
-    const dbDir = path.resolve(__dirname, '../../database');
-    if (!fs.existsSync(dbDir)) {
-      fs.mkdirSync(dbDir, { recursive: true });
-      console.log('Created database directory:', dbDir);
+    // Ensure database directory exists for the local SQLite fallback only.
+    if (!process.env.DATABASE_URL) {
+      const dbDir = path.resolve(__dirname, '../../database');
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+        console.log('Created database directory:', dbDir);
+      }
     }
     
     // SQLite path is only relevant for local development.
@@ -264,6 +277,13 @@ async function initializeDatabase() {
     await db.connect();
     console.log('Database connected successfully');
     await normalizeLegacyPrimaryKeyConstraints();
+
+    // Neon Functions starts on every cold request. The schema is already
+    // managed, so skip the full startup migration scan unless explicitly asked.
+    if (process.env.SKIP_STARTUP_MIGRATIONS === 'true') {
+      console.log('Startup migrations skipped (SKIP_STARTUP_MIGRATIONS=true)');
+      return;
+    }
     } catch (dbError) {
       // If PostgreSQL connection fails, provide helpful error and exit
       if (process.env.DATABASE_URL) {
@@ -376,7 +396,7 @@ async function initializeDatabase() {
         }
 
         // Ensure Software Vala Liberia admin credentials
-        const bcrypt = require('bcrypt');
+        const bcrypt = require('bcryptjs');
         const ADMIN_EMAIL = 'admin@softwarevalalib.app';
         const ADMIN_PASSWORD = 'Admin@123!';
         let svAdmin = await db.get('SELECT id, email FROM users WHERE email = ?', [ADMIN_EMAIL]);
@@ -1552,7 +1572,7 @@ async function initializeDatabase() {
       if (!adminUser) {
         // Create admin user if it doesn't exist
         console.log('Creating admin user...');
-        const bcrypt = require('bcrypt');
+        const bcrypt = require('bcryptjs');
         const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, 10);
         
         try {
@@ -2480,7 +2500,7 @@ async function initializeDatabase() {
     // Reset all student passwords to the default and ensure accounts are active.
     // This runs on every startup to guarantee students can log in after deployment.
     try {
-      const bcrypt = require('bcrypt');
+      const bcrypt = require('bcryptjs');
       const defaultStudentPassword = 'Student@123';
       const saltRounds = 10;
       const newHash = await bcrypt.hash(defaultStudentPassword, saltRounds);
@@ -2749,7 +2769,7 @@ if (fs.existsSync(buildPath)) {
     });
   });
 } else {
-  // Backend-only deploy (e.g. Render API + Vercel frontend) — expected, not an error
+  // Backend-only deploy (Neon Function API + Vercel frontend) — expected, not an error
   console.log('API-only mode: no client/build on this service (frontend is on Vercel).');
   if (process.env.FRONTEND_URL) {
     console.log('Frontend URL:', process.env.FRONTEND_URL);
@@ -2814,7 +2834,7 @@ async function startServer() {
       startPeriodicCheckpoint();
     }
     
-    // Bind 0.0.0.0 so Render/cloud health checks can reach the app. Use HOST=127.0.0.1 locally if needed.
+    // Bind 0.0.0.0 so cloud health checks can reach the app. Use HOST=127.0.0.1 locally if needed.
     const host = process.env.HOST || '0.0.0.0';
 
     // Increase keep-alive and header timeouts so slow mobile carriers
@@ -2917,14 +2937,22 @@ function scheduleBirthdayNotifications() {
   scheduleNextCheck();
 }
 
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+if (require.main === module && !process.env.NEON_FUNCTIONS) {
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-startServer().catch(error => {
-  console.error('Failed to start server:', error);
-  process.exit(1);
-});
+  startServer().catch(error => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  });
+}
 
-module.exports = { app, server, io };
+module.exports = {
+  app,
+  server,
+  io,
+  initializeDatabase,
+  syncApprovedProgressReportsToTargets
+};
 
 

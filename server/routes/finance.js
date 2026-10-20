@@ -8,11 +8,12 @@ const { createNotification, sendNotificationToRole } = require('../utils/notific
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { getUploadsRoot } = require('../utils/uploadsRoot');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads/finance');
+    const uploadDir = path.join(getUploadsRoot(), 'finance');
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }

@@ -1,10 +1,21 @@
-const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
 // Check if PostgreSQL is configured
 const USE_POSTGRESQL = !!process.env.DATABASE_URL;
+
+// The SQLite driver is native and only needed for local development. Loading it
+// lazily keeps the Neon Functions bundle free of native addons.
+let sqlite3Driver;
+function getSqlite3() {
+  if (!sqlite3Driver) {
+    // eval keeps esbuild from trying to bundle the native module.
+    // eslint-disable-next-line no-eval
+    sqlite3Driver = eval('require')('sqlite3').verbose();
+  }
+  return sqlite3Driver;
+}
 
 if (!USE_POSTGRESQL && process.env.NODE_ENV === 'production') {
   console.error('DATABASE_URL is required in production.');
@@ -43,7 +54,7 @@ class Database {
         console.log('Created database directory:', dbDir);
       }
 
-      this.db = new sqlite3.Database(DB_PATH, (err) => {
+      this.db = new (getSqlite3().Database)(DB_PATH, (err) => {
         if (err) {
           console.error('Database connection error:', err.message);
           console.error('Database path:', DB_PATH);

@@ -6,6 +6,7 @@ const uploadCommunications = require('../utils/uploadCommunications');
 const uploadReports = require('../utils/uploadReports');
 const { uploadEntityImage } = require('../utils/uploadEntityImages');
 const { authenticateToken } = require('../utils/auth');
+const { getUploadsRoot } = require('../utils/uploadsRoot');
 const path = require('path');
 const fs = require('fs');
 
@@ -34,7 +35,7 @@ router.post('/profile-image', authenticateToken, upload.single('image'), async (
         if (oldImagePath.includes('/uploads/profile-images/')) {
           const oldImageFullPath = path.join(__dirname, '../..', oldImagePath);
           const normalizedOldPath = path.normalize(oldImageFullPath);
-          const profileImagesDir = path.normalize(path.join(__dirname, '../../uploads/profile-images'));
+          const profileImagesDir = path.normalize(path.join(getUploadsRoot(), 'profile-images'));
           if (normalizedOldPath.startsWith(profileImagesDir) && fs.existsSync(normalizedOldPath)) {
             fs.unlinkSync(normalizedOldPath);
             console.log('Deleted old profile image:', normalizedOldPath);
@@ -349,7 +350,7 @@ router.get('/download', authenticateToken, (req, res) => {
     
     // Additional security check - ensure it's within the project directory
     const normalizedPath = path.normalize(fullPath);
-    const uploadsBaseDir = path.normalize(path.join(__dirname, '../../uploads'));
+    const uploadsBaseDir = path.normalize(getUploadsRoot());
     
     if (!normalizedPath.startsWith(uploadsBaseDir)) {
       console.error('[Download Error] Access denied - path outside uploads directory:', {
@@ -509,7 +510,7 @@ router.get('/view', authenticateToken, (req, res) => {
     
     // Additional security check - ensure it's within the project directory
     const normalizedPath = path.normalize(fullPath);
-    const uploadsBaseDir = path.normalize(path.join(__dirname, '../../uploads'));
+    const uploadsBaseDir = path.normalize(getUploadsRoot());
     
     if (!normalizedPath.startsWith(uploadsBaseDir)) {
       console.error('[View Error] Access denied - path outside uploads directory:', {

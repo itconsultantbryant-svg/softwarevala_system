@@ -31,6 +31,7 @@ server/*.db
 # Build outputs
 client/build/
 client/dist/
+server/neon/dist/
 *.log
 
 # IDE

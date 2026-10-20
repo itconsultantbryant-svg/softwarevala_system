@@ -2,7 +2,8 @@ const path = require('path');
 
 /**
  * Absolute path to the uploads root directory.
- * Must match server.js: UPLOADS_DIR env, or server/uploads (symlinked to persistent disk on Render).
+ * Must match server.js: UPLOADS_DIR env, or server/uploads (symlinked to a disk host).
+ * On Neon Functions set UPLOADS_DIR=/tmp/uploads; that filesystem is ephemeral.
  */
 function getUploadsRoot() {
   return path.resolve(process.env.UPLOADS_DIR || path.join(__dirname, '..', 'uploads'));

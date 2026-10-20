@@ -1160,7 +1160,7 @@ router.get('/reports/overview', authenticateToken, svc.requirePerm('reports.view
       db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COUNT(l.id) AS count FROM sales_leads l LEFT JOIN marketing_agents a ON a.id = l.referral_agent_id GROUP BY a.agent_code`),
       db.all(`SELECT date(COALESCE(submitted_at, created_at)) AS label, COUNT(*) AS count FROM marketing_agent_applications GROUP BY label ORDER BY label`),
       db.all(`SELECT COALESCE(a.agent_code,'Unattributed') AS label, COALESCE(SUM(pay.amount),0) AS count FROM marketing_agents a LEFT JOIN sales_contracts c ON c.referral_agent_id = a.id LEFT JOIN client_cash_payments pay ON pay.contract_id = c.id AND pay.status = 'VERIFIED' GROUP BY a.id`),
-      db.all(`SELECT substr(created_at,1,7) AS label, COALESCE(SUM(final_commission),0) AS count FROM commissions GROUP BY label`),
+      db.all(`SELECT substr(CAST(created_at AS TEXT),1,7) AS label, COALESCE(SUM(final_commission),0) AS count FROM commissions GROUP BY label`),
       db.all(`SELECT id, reference, full_name, status FROM marketing_agent_applications WHERE status IN ('NEW','UNDER_REVIEW') ORDER BY submitted_at DESC LIMIT 8`),
       db.all(`SELECT i.id, i.interview_time, a.full_name FROM marketing_agent_interviews i JOIN marketing_agent_applications a ON a.id = i.application_id WHERE date(i.interview_date) = date('now') AND i.status = 'SCHEDULED'`),
       db.all(`SELECT id, commission_number, final_commission, status FROM commissions WHERE status IN ('CALCULATED','UNDER_REVIEW') ORDER BY created_at DESC LIMIT 8`),
