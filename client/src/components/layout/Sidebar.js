@@ -21,6 +21,7 @@ const Sidebar = () => {
   const [hasStaffManagementAccess, setHasStaffManagementAccess] = useState(false);
   const [hasStudentPaymentAccess, setHasStudentPaymentAccess] = useState(false);
   const [hasIctAuditAccess, setHasIctAuditAccess] = useState(false);
+  const [applicationStats, setApplicationStats] = useState(null);
 
   /* =========================
      ROLE HELPERS
@@ -193,6 +194,15 @@ const Sidebar = () => {
     } catch {}
   }, []);
 
+  const fetchApplicationStats = useCallback(async () => {
+    try {
+      const res = await api.get('/marketing-agents/applications/stats');
+      setApplicationStats(res.data || null);
+    } catch {
+      setApplicationStats(null);
+    }
+  }, []);
+
   /* =========================
      EFFECTS
   ========================= */
@@ -207,6 +217,10 @@ const Sidebar = () => {
     refreshStudentPaymentAccess();
     checkIctAuditAccess();
 
+    if (['admin', 'departmenthead', 'staff'].includes(normalizeRole(user.role))) {
+      fetchApplicationStats();
+    }
+
     if (normalizeRole(user.role) === 'departmenthead') {
       fetchUnreadFromAdmin();
     }
@@ -216,13 +230,14 @@ const Sidebar = () => {
 
     const handler = () => {
       fetchUnreadCount();
+      fetchApplicationStats();
       if (normalizeRole(user.role) === 'departmenthead') fetchUnreadFromAdmin();
     };
 
     socket.on('notification', handler);
 
     return () => socket.off('notification', handler);
-  }, [user, fetchUnreadCount, checkFinanceAccess, checkAcademyAccess, checkStaffManagementAccess, refreshStudentPaymentAccess, checkIctAuditAccess, fetchUnreadFromAdmin]);
+  }, [user, fetchUnreadCount, checkFinanceAccess, checkAcademyAccess, checkStaffManagementAccess, refreshStudentPaymentAccess, checkIctAuditAccess, fetchUnreadFromAdmin, fetchApplicationStats]);
 
   /* =========================
      MENU CONFIG
@@ -278,15 +293,23 @@ const Sidebar = () => {
         { path: '/targets', label: 'Targets', icon: 'bi-bullseye', roles: ['Admin', 'Staff', 'DepartmentHead'] }
       );
       pushSection('Marketing & Sales');
+      const stageCount = (key) => applicationStats?.cards?.[key] || 0;
       items.push(
         { path: '/marketing/overview', label: 'Sales Overview', icon: 'bi-graph-up', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { type: 'subsection', label: 'Applicant pipeline' },
+        { path: '/marketing/applications', label: 'All Applications', icon: 'bi-inboxes', roles: ['Admin', 'Staff', 'DepartmentHead'], badge: stageCount('total') },
+        { path: '/marketing/applications?status=SHORTLISTED', label: 'Shortlisted', icon: 'bi-bookmark-check', roles: ['Admin', 'DepartmentHead'], badge: stageCount('shortlisted') },
+        { path: '/marketing/applications?status=INTERVIEW_SCHEDULED', label: 'Interview Scheduled', icon: 'bi-calendar-check', roles: ['Admin', 'DepartmentHead'], badge: stageCount('interviewScheduled') },
+        { path: '/marketing/applications?status=INTERVIEWED', label: 'Interviewed', icon: 'bi-person-check', roles: ['Admin', 'DepartmentHead'], badge: stageCount('interviewed') },
+        { path: '/marketing/applications?status=ONBOARDING', label: 'Selected / Onboarding', icon: 'bi-person-plus', roles: ['Admin', 'DepartmentHead'], badge: stageCount('selected') },
+        { path: '/marketing/applications?status=WAITLISTED', label: 'Waitlisted', icon: 'bi-hourglass-split', roles: ['Admin', 'DepartmentHead'], badge: stageCount('waitlisted') },
+        { path: '/marketing/applications?status=NOT_SELECTED', label: 'Not Selected', icon: 'bi-person-x', roles: ['Admin', 'DepartmentHead'], badge: stageCount('notSelected') },
         { path: '/marketing/leads', label: 'Leads', icon: 'bi-funnel', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/clients', label: 'Clients', icon: 'bi-person-vcard', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/contracts', label: 'Contracts', icon: 'bi-file-earmark-text', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/proposals', label: 'Proposals', icon: 'bi-file-earmark-check', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-        { path: '/marketing/applications', label: 'Agent Applications', icon: 'bi-inboxes', roles: ['Admin', 'Staff', 'DepartmentHead'] },
-        { path: '/marketing/applications?status=SHORTLISTED', label: 'Shortlisted', icon: 'bi-bookmark-check', roles: ['Admin', 'DepartmentHead'] },
-        { path: '/marketing/agents?status=ONBOARDING', label: 'Onboarding', icon: 'bi-list-check', roles: ['Admin', 'DepartmentHead'] },
+        { type: 'subsection', label: 'Agents' },
+        { path: '/marketing/agents?status=ONBOARDING', label: 'Agent Onboarding', icon: 'bi-list-check', roles: ['Admin', 'DepartmentHead'] },
         { path: '/marketing/agents?status=ACTIVE', label: 'Active Agents', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/agents?status=SUSPENDED', label: 'Suspended', icon: 'bi-pause-circle', roles: ['Admin', 'DepartmentHead'] },
         { path: '/marketing/agents?status=TERMINATED', label: 'Former Agents', icon: 'bi-person-x', roles: ['Admin', 'DepartmentHead'] },
@@ -365,7 +388,7 @@ const Sidebar = () => {
     items.push({ path: '/profile', label: 'Profile', icon: 'bi-person-circle', roles: ['*'] });
 
     return items;
-  }, [user, unreadCount, unreadFromAdmin, hasIctAuditAccess]);
+  }, [user, unreadCount, unreadFromAdmin, hasIctAuditAccess, applicationStats]);
 
   /* =========================
      RENDER
@@ -423,7 +446,7 @@ const Sidebar = () => {
         <ul className="sidebar-menu">
           {menuItems
             .filter(item => {
-              if (item.type === 'section') return true;
+              if (item.type === 'section' || item.type === 'subsection') return true;
               // Check role access
               let roleOk = false;
               if (item.staffManagement) {
@@ -454,8 +477,20 @@ const Sidebar = () => {
                   </li>
                 );
               }
-              // Determine if this menu item is active
-              const isActive = location.pathname === item.path ||
+              if (item.type === 'subsection') {
+                return (
+                  <li key={`subsection-${item.label}`} className="sidebar-subsection-header">
+                    <span className="sidebar-subsection-label">{item.label}</span>
+                  </li>
+                );
+              }
+              // Determine if this menu item is active, including status query filters
+              const [itemPath, itemQuery = ''] = item.path.split('?');
+              const currentQuery = new URLSearchParams(location.search);
+              const queryMatches = itemQuery
+                ? Array.from(new URLSearchParams(itemQuery)).every(([key, value]) => currentQuery.get(key) === value)
+                : !(['/marketing/applications', '/marketing/agents'].includes(itemPath) && currentQuery.get('status'));
+              const isActive = (location.pathname === itemPath && queryMatches) ||
                 (item.path === '/staff-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'staff') ||
                 (item.path === '/department-dashboard' && location.pathname === '/dashboard' && normalizeRole(user?.role) === 'departmenthead') ||
                 (item.path === '/student' && location.pathname.startsWith('/student')) ||

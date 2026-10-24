@@ -262,7 +262,21 @@
   display: block;
 }
 
-.sidebar.collapsed .sidebar-section-header {
+.sidebar-subsection-header {
+  padding: 8px 20px 2px 30px;
+}
+
+.sidebar-subsection-label {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.sidebar.collapsed .sidebar-section-header,
+.sidebar.collapsed .sidebar-subsection-header {
   display: none;
 }
 

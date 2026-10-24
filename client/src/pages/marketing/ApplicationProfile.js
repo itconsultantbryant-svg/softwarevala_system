@@ -1,14 +1,35 @@
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import api from '../../config/api';
 import PageHeader from '../../components/layout/PageHeader';
 
 const TABS = ['Overview', 'Background', 'Experience', 'Network', 'Assessment', 'Availability', 'Conflict', 'Documents', 'Screening', 'Interview', 'Notes', 'Timeline'];
 
+const STAGE_HELP = {
+  NEW: 'Start the review and record a screening score.',
+  UNDER_REVIEW: 'Review the screening score, then shortlist or waitlist the applicant.',
+  SHORTLISTED: 'Schedule the interview. The application moves to Interview Scheduled automatically when an interview is created.',
+  INTERVIEW_SCHEDULED: 'Record the interview assessment. The application moves to Interviewed automatically when the score is saved.',
+  INTERVIEWED: 'Review the interview recommendation, then select the applicant for onboarding or mark them not selected.',
+  ONBOARDING: 'Continue the onboarding checklist on the agent record, then activate the agent.',
+  WAITLISTED: 'Review this applicant again when a place becomes available.',
+  NOT_SELECTED: 'No further action is required unless management reopens this application.'
+};
+
+const STATUS_ACTIONS = [
+  { status: 'UNDER_REVIEW', label: 'Start review' },
+  { status: 'SHORTLISTED', label: 'Shortlist' },
+  { status: 'WAITLISTED', label: 'Waitlist' },
+  { status: 'NOT_SELECTED', label: 'Not selected' },
+  { status: 'SELECTED', label: 'Select for onboarding' }
+];
+
 const ApplicationProfile = () => {
   const { id } = useParams();
+  const [params, setParams] = useSearchParams();
+  const requestedTab = params.get('tab');
   const [data, setData] = useState(null);
-  const [tab, setTab] = useState('Overview');
+  const [tab, setTab] = useState(TABS.includes(requestedTab) ? requestedTab : 'Overview');
   const [error, setError] = useState('');
   const [scores, setScores] = useState({ communication: 0, network: 0, sales_ability: 0, technology: 0, reliability: 0, integrity: 0, notes: '' });
   const [interview, setInterview] = useState({ interview_date: '', interview_time: '', format: 'Phone', meeting_link: '' });
@@ -17,8 +38,22 @@ const ApplicationProfile = () => {
   const load = () => api.get(`/marketing-agents/applications/${id}`).then((res) => setData(res.data)).catch((err) => setError(err.response?.data?.error || 'Unable to load application'));
   useEffect(() => { load(); }, [id]);
 
+  useEffect(() => {
+    const nextTab = params.get('tab');
+    if (nextTab && TABS.includes(nextTab)) setTab(nextTab);
+  }, [params]);
+
+  const selectTab = (name) => {
+    setTab(name);
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set('tab', name);
+      return next;
+    }, { replace: true });
+  };
+
   const changeStatus = async (status) => {
-    if (!window.confirm(`Change this application to ${status}?`)) return;
+    if (!window.confirm(`Change this application to ${status.replaceAll('_', ' ')}?`)) return;
     await api.post(`/marketing-agents/applications/${id}/status`, { status, confirm: true });
     load();
   };
@@ -26,17 +61,42 @@ const ApplicationProfile = () => {
   if (error) return <div className="alert alert-danger">{error}</div>;
   if (!data) return <div className="p-4">Loading application…</div>;
   const app = data.application;
+  const linkedAgent = data.linkedAgent;
+  const stageHelp = STAGE_HELP[app.status] || 'Review the application and continue the workflow.';
 
   return (
     <div className="marketing-page">
-      <PageHeader title={app.full_name} subtitle={`${app.reference} · ${app.status}`} />
+      <PageHeader title={app.full_name} subtitle={`${app.reference} · ${app.status.replaceAll('_', ' ')}`} />
+      <div className="alert alert-info d-flex flex-wrap justify-content-between gap-2 align-items-start">
+        <div>
+          <strong>Current stage: {app.status.replaceAll('_', ' ')}</strong>
+          <div>{stageHelp}</div>
+        </div>
+        <div className="d-flex flex-wrap gap-2">
+          {['NEW', 'UNDER_REVIEW'].includes(app.status) && <button type="button" className="btn btn-sm btn-primary" onClick={() => selectTab('Screening')}>Review screening</button>}
+          {app.status === 'SHORTLISTED' && <button type="button" className="btn btn-sm btn-primary" onClick={() => selectTab('Interview')}>Schedule interview</button>}
+          {app.status === 'INTERVIEW_SCHEDULED' && <button type="button" className="btn btn-sm btn-primary" onClick={() => selectTab('Interview')}>Record interview</button>}
+          {app.status === 'INTERVIEWED' && <button type="button" className="btn btn-sm btn-success" onClick={() => changeStatus('SELECTED')}>Select for onboarding</button>}
+          {app.status === 'INTERVIEWED' && <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => changeStatus('NOT_SELECTED')}>Not selected</button>}
+          {(app.status === 'ONBOARDING' || app.status === 'SELECTED') && linkedAgent && <Link className="btn btn-sm btn-success" to={`/marketing/agents/${linkedAgent.id}`}>Open onboarding record</Link>}
+          <Link className="btn btn-sm btn-outline-secondary" to="/marketing/applications">Back to applications</Link>
+        </div>
+      </div>
       <div className="d-flex flex-wrap gap-2 mb-3">
-        {['UNDER_REVIEW', 'SHORTLISTED', 'WAITLISTED', 'NOT_SELECTED', 'SELECTED'].map((status) => (
-          <button type="button" key={status} className="btn btn-sm btn-outline-primary" onClick={() => changeStatus(status)}>{status === 'SELECTED' ? 'Select for onboarding' : status.replaceAll('_', ' ')}</button>
+        {STATUS_ACTIONS.map(({ status, label }) => (
+          <button
+            type="button"
+            key={status}
+            className="btn btn-sm btn-outline-primary"
+            disabled={app.status === status || (status === 'SELECTED' && app.status === 'ONBOARDING')}
+            onClick={() => changeStatus(status)}
+          >
+            {label}
+          </button>
         ))}
       </div>
       <div className="d-flex flex-wrap gap-2 mb-3">
-        {TABS.map((name) => <button type="button" key={name} className={`btn btn-sm ${tab === name ? 'btn-primary' : 'btn-light'}`} onClick={() => setTab(name)}>{name}</button>)}
+        {TABS.map((name) => <button type="button" key={name} className={`btn btn-sm ${tab === name ? 'btn-primary' : 'btn-light'}`} onClick={() => selectTab(name)}>{name}</button>)}
       </div>
       {tab === 'Overview' && (
         <div>
@@ -46,6 +106,12 @@ const ApplicationProfile = () => {
           <p>Professional status: {app.professional_status}</p>
           <p>Source: {app.source} · Submitted: {app.submitted_at}</p>
           <p>Screening score: {app.screening_total ?? 'Not scored'} · Reviewer: {app.reviewer_name || 'Unassigned'}</p>
+          {linkedAgent && (
+            <p>
+              Onboarding record: <Link to={`/marketing/agents/${linkedAgent.id}`}>{linkedAgent.agent_code || 'Open agent onboarding'}</Link>
+              {' '}· Status: {linkedAgent.status}
+            </p>
+          )}
         </div>
       )}
       {tab === 'Background' && <p>{app.education}<br />{app.background}<br />{app.occupation} · {app.organization}</p>}

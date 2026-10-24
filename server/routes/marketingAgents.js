@@ -330,7 +330,8 @@ router.get('/applications', authenticateToken, svc.requirePerm('marketing_agent.
     const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10) || 25));
     const totalRow = await db.get(`SELECT COUNT(*) AS c FROM marketing_agent_applications a WHERE ${where.join(' AND ')}`, params);
     const rows = await db.all(
-      `SELECT a.*, u.name AS reviewer_name
+      `SELECT a.*, u.name AS reviewer_name,
+              (SELECT ma.id FROM marketing_agents ma WHERE ma.application_id = a.id) AS linked_agent_id
        FROM marketing_agent_applications a
        LEFT JOIN users u ON u.id = a.reviewer_id
        WHERE ${where.join(' AND ')}
@@ -416,7 +417,7 @@ router.get('/applications/:id', authenticateToken, svc.requirePerm('marketing_ag
       if (linkedAgent.agent_code) timeline.push({ event: 'Agent Activated', timestamp: linkedAgent.activation_date, actor: null, notes: linkedAgent.agent_code });
     }
     audits.forEach((row) => timeline.push({ event: row.action, timestamp: row.created_at, actor: row.actor_name, notes: row.details }));
-    res.json({ application, screening, interviews, interviewScores, notes, documents, timeline, screeningMax: svc.SCREENING_MAX, interviewMax: svc.INTERVIEW_MAX });
+    res.json({ application, linkedAgent, screening, interviews, interviewScores, notes, documents, timeline, screeningMax: svc.SCREENING_MAX, interviewMax: svc.INTERVIEW_MAX });
   } catch (error) {
     fail(res, error, 'Failed to load application');
   }
