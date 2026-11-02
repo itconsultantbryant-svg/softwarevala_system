@@ -36,28 +36,47 @@ const USER_LOGIN_COLUMNS = `
   id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified, must_change_password, session_version, failed_login_attempts, lockout_until
 `;
 
+const LEGACY_USER_LOGIN_COLUMNS = `
+  id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified
+`;
+
+function isMissingAuthSchema(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    /(?:no such column|column .* does not exist|undefined column)/i.test(message) &&
+    /must_change_password|session_version|failed_login_attempts|lockout_until|last_login_at|last_login_ip/.test(message)
+  );
+}
+
+async function getLoginUser(db, where, value) {
+  try {
+    return await db.get(`SELECT ${USER_LOGIN_COLUMNS} FROM users WHERE ${where} LIMIT 1`, [value]);
+  } catch (error) {
+    // Production deployments can temporarily be on the schema before migrations
+    // 037/040. Existing accounts must remain able to sign in during that rollout.
+    if (!isMissingAuthSchema(error)) throw error;
+    const user = await db.get(`SELECT ${LEGACY_USER_LOGIN_COLUMNS} FROM users WHERE ${where} LIMIT 1`, [value]);
+    return user ? { ...user, must_change_password: 0, session_version: 1, failed_login_attempts: 0, lockout_until: null } : null;
+  }
+}
+
 async function findUserByLoginId(db, loginId) {
   if (!loginId) return null;
 
   for (const variant of loginLookupVariants(loginId)) {
-    const byEmail = await db.get(
-      `SELECT ${USER_LOGIN_COLUMNS} FROM users WHERE LOWER(TRIM(email)) = ? LIMIT 1`,
-      [variant]
-    );
+    const byEmail = await getLoginUser(db, 'LOWER(TRIM(email)) = ?', variant);
     if (byEmail) return byEmail;
   }
 
   const usernameKey = String(loginId).toLowerCase().trim();
   if (!usernameKey) return null;
 
-  return db.get(
-    `SELECT ${USER_LOGIN_COLUMNS} FROM users WHERE LOWER(TRIM(username)) = ? LIMIT 1`,
-    [usernameKey]
-  );
+  return getLoginUser(db, 'LOWER(TRIM(username)) = ?', usernameKey);
 }
 
 module.exports = {
   normalizeAccountEmail,
   loginLookupVariants,
-  findUserByLoginId
+  findUserByLoginId,
+  isMissingAuthSchema
 };

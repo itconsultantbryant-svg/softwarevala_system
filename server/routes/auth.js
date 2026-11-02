@@ -7,7 +7,7 @@ const { logAction } = require('../utils/audit');
 const { sendOTP, sendPasswordReset } = require('../utils/email');
 const { normalizeProfileImage } = require('../utils/normalizeProfileImage');
 const { attachAcademyContext, ACADEMY_DEPARTMENT_PATTERN, ACADEMY_HEAD_EMAILS } = require('../utils/academyPermissions');
-const { findUserByLoginId } = require('../utils/emailNormalize');
+const { findUserByLoginId, isMissingAuthSchema } = require('../utils/emailNormalize');
 const crypto = require('crypto');
 
 // Generate OTP
@@ -21,6 +21,33 @@ async function recordLoginActivity(userId, identifier, success, req) {
       userId || null, String(identifier || '').slice(0, 254), success ? 1 : 0, req.ip || null, req.get('user-agent') || null
     ]);
   } catch (_error) { /* login remains available if monitoring storage is unavailable */ }
+}
+
+async function runAuthSchemaOptional(sql, params) {
+  try {
+    return await db.run(sql, params);
+  } catch (error) {
+    if (!isMissingAuthSchema(error)) throw error;
+    return null;
+  }
+}
+
+async function getCurrentUserForAuth(userId) {
+  try {
+    return await db.get(
+      `SELECT id, email, username, role, name, phone, profile_image, is_active, email_verified, must_change_password, created_at
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+  } catch (error) {
+    if (!isMissingAuthSchema(error)) throw error;
+    const user = await db.get(
+      `SELECT id, email, username, role, name, phone, profile_image, is_active, email_verified, created_at
+       FROM users WHERE id = ?`,
+      [userId]
+    );
+    return user ? { ...user, must_change_password: 0 } : null;
+  }
 }
 
 // Registration removed - users are created by admin only
@@ -93,14 +120,14 @@ router.post('/login', [
     if (!isValidPassword) {
       const failures = Number(user.failed_login_attempts || 0) + 1;
       const lockout = failures >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
-      await db.run('UPDATE users SET failed_login_attempts = ?, lockout_until = ? WHERE id = ?', [failures >= 5 ? 0 : failures, lockout, user.id]);
+      await runAuthSchemaOptional('UPDATE users SET failed_login_attempts = ?, lockout_until = ? WHERE id = ?', [failures >= 5 ? 0 : failures, lockout, user.id]);
       await recordLoginActivity(user.id, loginId, false, req);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     // Generate token with canonical role so route guards work correctly
     const token = generateToken({ ...user, role: canonicalRole });
-    await db.run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ?, failed_login_attempts = 0, lockout_until = NULL WHERE id = ?', [req.ip || null, user.id]);
+    await runAuthSchemaOptional('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ?, failed_login_attempts = 0, lockout_until = NULL WHERE id = ?', [req.ip || null, user.id]);
     await recordLoginActivity(user.id, loginId, true, req);
 
     // Log action asynchronously (don't block login response)
@@ -158,11 +185,7 @@ router.post('/login', [
 // Get current user
 router.get('/me', authenticateToken, async (req, res) => {
   try {
-    const user = await db.get(
-      `SELECT id, email, username, role, name, phone, profile_image, is_active, email_verified, must_change_password, created_at
-       FROM users WHERE id = ?`,
-      [req.user.id]
-    );
+    const user = await getCurrentUserForAuth(req.user.id);
 
     if (!user) {
       return res.status(404).json({ error: 'User not found' });

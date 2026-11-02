@@ -705,13 +705,14 @@ router.post('/agents/:id/onboarding/:itemId', authenticateToken, svc.requirePerm
     if (status === 'WAIVED' && (!req.body.reason || !svc.hasPermission(req.user, 'marketing_agent.activate'))) {
       return res.status(400).json({ error: 'A waiver requires an authorized approver and a reason' });
     }
-    await db.run(
+    const update = await db.run(
       `UPDATE marketing_agent_onboarding_items
        SET status = ?, completed_by = ?, completed_at = CASE WHEN ? IN ('COMPLETED','WAIVED') THEN CURRENT_TIMESTAMP ELSE NULL END,
            notes = ?, waived_by = CASE WHEN ? = 'WAIVED' THEN ? ELSE NULL END, waive_reason = ?
        WHERE id = ? AND agent_id = ?`,
       [status, req.user.id, status, req.body.notes || null, status, req.user.id, req.body.reason || null, req.params.itemId, req.params.id]
     );
+    if (!update.changes) return res.status(404).json({ error: 'Onboarding item not found for this agent' });
     await logAction(req.user.id, 'onboarding_item', 'marketing_agents', req.params.id, { itemId: req.params.itemId, status }, req);
     res.json({ ok: true });
   } catch (error) {

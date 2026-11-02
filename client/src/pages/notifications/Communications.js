@@ -40,6 +40,7 @@ const Communications = () => {
     // Set up real-time socket connection
     if (user?.id) {
       const socket = initSocket(user.id);
+      if (!socket) return undefined;
       
       socket.on('notification', (notification) => {
         setNotifications(prev => [notification, ...prev]);

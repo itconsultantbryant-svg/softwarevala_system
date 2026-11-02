@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const { isMissingAuthSchema } = require('./emailNormalize');
 require('dotenv').config();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-change-in-production';
@@ -67,7 +68,15 @@ async function authenticateToken(req, res, next) {
     // resets/session revocation effective immediately, rather than trusting JWT
     // claims until their natural expiry.
     const db = require('../config/database');
-    const user = await db.get('SELECT id, role, is_active, must_change_password, session_version FROM users WHERE id = ?', [decoded.id]);
+    let user;
+    try {
+      user = await db.get('SELECT id, role, is_active, must_change_password, session_version FROM users WHERE id = ?', [decoded.id]);
+    } catch (error) {
+      if (!isMissingAuthSchema(error)) throw error;
+      // Compatibility only while the additive agent/auth migrations are applied.
+      user = await db.get('SELECT id, role, is_active FROM users WHERE id = ?', [decoded.id]);
+      if (user) user = { ...user, must_change_password: 0, session_version: 1 };
+    }
     if (!user || !user.is_active || Number(user.session_version || 1) !== Number(decoded.sessionVersion || 1)) {
       return res.status(401).json({ error: 'Your session is no longer valid' });
     }

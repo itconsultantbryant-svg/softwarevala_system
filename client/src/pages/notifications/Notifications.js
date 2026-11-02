@@ -25,6 +25,7 @@ const Notifications = () => {
     // Set up real-time socket connection
     if (user?.id) {
       const socket = getSocket() || initSocket(user.id);
+      if (!socket) return undefined;
       
       socket.on('notification', (notification) => {
         // Only add if it's from Admin (for department heads when filter is on)
@@ -579,4 +580,3 @@ const Notifications = () => {
 };
 
 export default Notifications;
-

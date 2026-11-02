@@ -4,6 +4,12 @@ import { getSocketBaseUrl } from '../utils/apiUrl';
 let socket = null;
 
 export const initSocket = (userId) => {
+  // Neon Functions are request-scoped and cannot retain Socket.IO polling or
+  // WebSocket sessions. Do not create a reconnect storm in that deployment.
+  // A persistent Socket.IO host may explicitly opt in when one is configured.
+  if (process.env.NODE_ENV === 'production' && process.env.REACT_APP_ENABLE_SOCKET !== 'true') {
+    return null;
+  }
   if (!socket) {
     const socketUrl = getSocketBaseUrl() || 'http://localhost:3006';
     socket = io(socketUrl, {
@@ -66,4 +72,3 @@ export const disconnectSocket = () => {
 };
 
 export const getSocket = () => socket;
-
