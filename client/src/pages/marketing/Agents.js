@@ -39,6 +39,7 @@ export const AgentProfile = () => {
   const [data, setData] = useState(null);
   const [qr, setQr] = useState('');
   const [error, setError] = useState('');
+  const [savingItemId, setSavingItemId] = useState(null);
   const load = () => api.get(`/marketing-agents/agents/${id}`).then((res) => {
     setData(res.data);
     if (res.data.referralUrl) {
@@ -50,8 +51,16 @@ export const AgentProfile = () => {
   const setItem = async (item, status) => {
     const reason = status === 'WAIVED' ? window.prompt('Waiver reason') : '';
     if (status === 'WAIVED' && !reason) return;
-    await api.post(`/marketing-agents/agents/${id}/onboarding/${item.id}`, { status, reason, notes: '' });
-    load();
+    setError('');
+    setSavingItemId(item.id);
+    try {
+      await api.post(`/marketing-agents/agents/${id}/onboarding/${item.id}`, { status, reason, notes: '' });
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Unable to update this onboarding item');
+    } finally {
+      setSavingItemId(null);
+    }
   };
 
   const approveAndProvision = async () => {
@@ -66,7 +75,7 @@ export const AgentProfile = () => {
     }
   };
 
-  if (error) return <div className="alert alert-danger">{error}</div>;
+  if (!data && error) return <div className="alert alert-danger">{error}</div>;
   if (!data) return <div className="p-4">Loading agent…</div>;
   const agent = data.agent;
   const items = data.onboarding || [];
@@ -89,6 +98,7 @@ export const AgentProfile = () => {
       <PageHeader title={agent.full_name} subtitle={`${agent.agent_code || 'Onboarding — no agent ID yet'} · ${agent.status}`} />
       <p>{agent.phone} · {agent.whatsapp} · {agent.email}</p>
       <p>{agent.county} {agent.city} · Activated {agent.activation_date || '—'} · Engagement ends {agent.engagement_end_date || '—'}</p>
+      {error && <div className="alert alert-danger" role="alert">{error}</div>}
       {data.referralUrl && (
         <p>
           Referral: <a href={data.referralUrl} target="_blank" rel="noreferrer">{data.referralUrl}</a>
@@ -112,8 +122,10 @@ export const AgentProfile = () => {
               <td>{item.label}</td>
               <td>{item.status}</td>
               <td>
-                <button type="button" className="btn btn-sm btn-outline-success me-1" onClick={() => setItem(item, 'COMPLETED')}>Complete</button>
-                <button type="button" className="btn btn-sm btn-outline-warning" onClick={() => setItem(item, 'WAIVED')}>Waive</button>
+                <button type="button" className="btn btn-sm btn-outline-success me-1" disabled={savingItemId === item.id || item.status === 'COMPLETED'} onClick={() => setItem(item, 'COMPLETED')}>
+                  {savingItemId === item.id ? 'Saving…' : item.status === 'COMPLETED' ? 'Completed' : 'Complete'}
+                </button>
+                <button type="button" className="btn btn-sm btn-outline-warning" disabled={savingItemId === item.id} onClick={() => setItem(item, 'WAIVED')}>Waive</button>
               </td>
             </tr>
           ))}
