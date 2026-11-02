@@ -29,7 +29,8 @@ function generateToken(user) {
     email: user.email,
     role: user.role,
     username: user.username,
-    name: user.name || null
+    name: user.name || null,
+    sessionVersion: Number(user.session_version || 1)
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 }
@@ -48,7 +49,7 @@ function verifyToken(token) {
 /**
  * Middleware to authenticate requests
  */
-function authenticateToken(req, res, next) {
+async function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
@@ -61,8 +62,25 @@ function authenticateToken(req, res, next) {
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
 
-  req.user = decoded;
-  next();
+  try {
+    // Read current account state on every protected request: this makes password
+    // resets/session revocation effective immediately, rather than trusting JWT
+    // claims until their natural expiry.
+    const db = require('../config/database');
+    const user = await db.get('SELECT id, role, is_active, must_change_password, session_version FROM users WHERE id = ?', [decoded.id]);
+    if (!user || !user.is_active || Number(user.session_version || 1) !== Number(decoded.sessionVersion || 1)) {
+      return res.status(401).json({ error: 'Your session is no longer valid' });
+    }
+    const role = String(user.role || '').toLowerCase();
+    const passwordRoute = req.path.endsWith('/change-password') || req.path.endsWith('/me');
+    if (role === 'freelancemarketingagent' && user.must_change_password && !passwordRoute) {
+      return res.status(428).json({ error: 'Password change required', code: 'PASSWORD_CHANGE_REQUIRED' });
+    }
+    req.user = { ...decoded, role: user.role, must_change_password: !!user.must_change_password };
+    next();
+  } catch (error) {
+    next(error);
+  }
 }
 
 /**
@@ -189,4 +207,3 @@ module.exports = {
   checkPermission,
   requirePermission
 };
-

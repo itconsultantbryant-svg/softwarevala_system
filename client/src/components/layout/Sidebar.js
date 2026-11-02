@@ -274,7 +274,22 @@ const Sidebar = () => {
         { path: '/communications', label: 'Message Students', icon: 'bi-chat-dots', roles: ['Instructor'], instructorPortal: true }
       );
     } else */
-    if (userRole === 'staff') {
+    if (userRole === 'freelancemarketingagent') {
+      items.push({ path: '/agent/dashboard', label: 'Dashboard', icon: 'bi-speedometer2', roles: ['FreelanceMarketingAgent'] });
+      pushSection('Marketing & Clients');
+      items.push(
+        { path: '/agent/leads', label: 'My Leads', icon: 'bi-funnel', roles: ['FreelanceMarketingAgent'] },
+        { path: '/agent/add-client', label: 'Add New Client', icon: 'bi-person-plus', roles: ['FreelanceMarketingAgent'] }
+      );
+      pushSection('Financial');
+      items.push({ path: '/agent/wallet', label: 'My Wallet', icon: 'bi-wallet2', roles: ['FreelanceMarketingAgent'] });
+      pushSection('Reports & Performance');
+      items.push(
+        { path: '/agent/reports', label: 'Weekly Reports', icon: 'bi-calendar-week', roles: ['FreelanceMarketingAgent'] },
+        { path: '/agent/monthly-reports', label: 'Monthly Reports', icon: 'bi-calendar-month', roles: ['FreelanceMarketingAgent'] },
+        { path: '/agent/targets', label: 'My Targets', icon: 'bi-bullseye', roles: ['FreelanceMarketingAgent'] }
+      );
+    } else if (userRole === 'staff') {
       items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-speedometer2', roles: ['Staff'] });
     } else if (userRole === 'departmenthead') {
       items.push({ path: '/department-dashboard', label: 'Department Dashboard', icon: 'bi-building-fill-gear', roles: ['DepartmentHead'] });
@@ -282,7 +297,7 @@ const Sidebar = () => {
       items.push({ path: '/dashboard', label: 'Dashboard', icon: 'bi-speedometer2', roles: ['Admin'] });
     }
 
-    if (userRole !== 'instructor') {
+    if (userRole !== 'instructor' && userRole !== 'freelancemarketingagent') {
       pushSection('Work');
       items.push(
         { path: '/clients', label: 'Clients', icon: 'bi-person-vcard-fill', roles: ['Admin', 'Staff', 'DepartmentHead'] },
@@ -315,6 +330,7 @@ const Sidebar = () => {
         { path: '/marketing/agents?status=TERMINATED', label: 'Former Agents', icon: 'bi-person-x', roles: ['Admin', 'DepartmentHead'] },
         { path: '/marketing/commissions', label: 'Commissions', icon: 'bi-cash-coin', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/weekly-reports', label: 'Weekly Reports', icon: 'bi-calendar-week', roles: ['Admin', 'Staff', 'DepartmentHead'] },
+        { path: '/marketing/agent-workflows', label: 'Agent Workflows', icon: 'bi-clipboard-check', roles: ['Admin', 'DepartmentHead'] },
         { path: '/marketing/performance', label: 'Performance', icon: 'bi-clipboard-data', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/reports', label: 'Marketing Reports', icon: 'bi-bar-chart', roles: ['Admin', 'Staff', 'DepartmentHead'] }
       );

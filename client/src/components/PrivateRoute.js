@@ -1,9 +1,10 @@
 import React from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 
 const PrivateRoute = ({ children, requiredRole = null, requiredRoles = null }) => {
   const { user, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -37,6 +38,9 @@ const PrivateRoute = ({ children, requiredRole = null, requiredRoles = null }) =
 
   if (!user) {
     return <Navigate to="/login" replace />;
+  }
+  if (user.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password" replace />;
   }
 
   const roleDenied = requiredRoles

@@ -54,13 +54,15 @@ export const AgentProfile = () => {
     load();
   };
 
-  const activate = async () => {
-    if (!window.confirm('Activate this applicant as an official SVL Marketing Agent? An Agent ID will be permanently assigned and will not be reused.')) return;
+  const approveAndProvision = async () => {
+    if (!window.confirm('Approve completed onboarding and provision this agent portal account? The agent will be required to replace the bootstrap password on first login.')) return;
     try {
-      await api.post(`/marketing-agents/agents/${id}/activate`, { confirm: true });
+      await api.post(`/marketing-agents/agents/${id}/approve-onboarding`, { confirm: true });
+      const result = await api.post(`/marketing-agents/agents/${id}/provision-account`, { confirm: true });
+      window.alert(`Account provisioned: ${result.data.username}\nDo not send credentials through an insecure channel.`);
       load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Activation failed');
+      setError(err.response?.data?.error || 'Approval or account provisioning failed');
     }
   };
 
@@ -97,7 +99,7 @@ export const AgentProfile = () => {
         </p>
       )}
       <div className="d-flex gap-2 mb-3 flex-wrap">
-        {!agent.agent_code && <button type="button" className="btn btn-success" disabled={!ready} onClick={activate}>Activate agent</button>}
+        {!agent.user_id && <button type="button" className="btn btn-success" disabled={!ready} onClick={approveAndProvision}>Approve & provision account</button>}
         {['RENEW', 'EXTEND', 'SUSPEND', 'TERMINATE', 'ALLOW_TO_EXPIRE'].map((action) => (
           <button type="button" key={action} className="btn btn-outline-secondary btn-sm" onClick={() => engagement(action)}>{action}</button>
         ))}

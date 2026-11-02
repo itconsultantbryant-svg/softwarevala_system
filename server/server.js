@@ -337,6 +337,10 @@ async function initializeDatabase() {
     const certificateAccessWindowsPath = path.join(__dirname, 'database/migrations/030_certificate_access_windows.sql');
     const marketingAgentsPath = path.join(__dirname, 'database/migrations/035_marketing_agents.sql');
     const marketingSyncPath = path.join(__dirname, 'database/migrations/036_marketing_agent_sync.sql');
+    const agentPortalPath = path.join(__dirname, 'database/migrations/037_agent_portal.sql');
+    const agentReportingJourneyPath = path.join(__dirname, 'database/migrations/038_agent_reporting_and_journeys.sql');
+    const agentLifecycleAuditPath = path.join(__dirname, 'database/migrations/039_agent_lifecycle_audit.sql');
+    const agentAuthSecurityPath = path.join(__dirname, 'database/migrations/040_agent_auth_security.sql');
     
     if (tables.length === 0) {
       console.log('Initializing database schema...');
@@ -672,7 +676,7 @@ async function initializeDatabase() {
           }
         }
       }
-      for (const migrationFile of [marketingAgentsPath, marketingSyncPath]) {
+      for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath]) {
         if (!fs.existsSync(migrationFile)) continue;
         const marketingSql = fs.readFileSync(migrationFile, 'utf8');
         for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
@@ -2478,7 +2482,7 @@ async function initializeDatabase() {
       }
     }
 
-    for (const migrationFile of [marketingAgentsPath, marketingSyncPath]) {
+    for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath]) {
       if (!fs.existsSync(migrationFile)) continue;
       const marketingSql = fs.readFileSync(migrationFile, 'utf8');
       for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
@@ -2565,8 +2569,19 @@ async function initializeDatabase() {
 // Health check is registered after the routes below (database-aware).
 
 // Routes
+app.use('/api', require('./middleware/agentApiBoundary'));
+const authLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.AUTH_LOGIN_MAX_ATTEMPTS || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: { error: 'Too many sign-in attempts. Please try again later.' }
+});
+app.use(['/api/auth/login', '/api/agent-auth/login'], authLoginLimiter);
 app.use('/api/audit-logs', require('./routes/auditLogs'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/agent-auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/departments', require('./routes/departments'));
 app.use('/api/department-reports', require('./routes/departmentReports'));
@@ -2582,6 +2597,7 @@ app.use('/api/reports', require('./routes/reports'));
 app.use('/api/my-reports-history', require('./routes/reportsHistory'));
 app.use('/api/marketing', require('./routes/marketing'));
 app.use('/api/marketing-agents', require('./routes/marketingAgents'));
+app.use('/api/agent', require('./routes/agentPortal'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/backup', require('./routes/backup'));
@@ -2954,5 +2970,3 @@ module.exports = {
   initializeDatabase,
   syncApprovedProgressReportsToTargets
 };
-
-

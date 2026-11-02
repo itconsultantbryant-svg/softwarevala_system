@@ -3,7 +3,7 @@ const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const QRCode = require('qrcode');
 const db = require('../config/database');
-const { authenticateToken } = require('../utils/auth');
+const { authenticateToken, hashPassword } = require('../utils/auth');
 const { logAction } = require('../utils/audit');
 const svc = require('../utils/marketingAgentService');
 
@@ -59,6 +59,24 @@ function buildPdf(lines) {
 function fail(res, error, label) {
   console.error(label, error);
   res.status(500).json({ error: label });
+}
+
+async function nextAgentUsername(fullName) {
+  const parts = String(fullName || '').toLowerCase().match(/[a-z0-9]+/g) || ['agent'];
+  const base = parts[0];
+  const candidates = [base, parts.length > 1 ? `${base}.${parts[parts.length - 1]}` : base];
+  for (const local of candidates) {
+    const username = `${local}@softwarevalalib.app`;
+    const used = await db.get('SELECT id FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)', [username, username]);
+    if (!used) return username;
+  }
+  let suffix = 2;
+  while (true) {
+    const username = `${candidates[1]}${suffix}@softwarevalalib.app`;
+    const used = await db.get('SELECT id FROM users WHERE lower(email) = lower(?) OR lower(username) = lower(?)', [username, username]);
+    if (!used) return username;
+    suffix += 1;
+  }
 }
 
 async function ownAgent(user) {
@@ -585,6 +603,55 @@ router.get('/agents', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/onboarding-sessions', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (_req, res) => {
+  try {
+    const sessions = await db.all(`SELECT s.*, COUNT(p.id) participant_count,
+      SUM(CASE WHEN p.attendance_status = 'PRESENT' THEN 1 ELSE 0 END) present_count
+      FROM marketing_agent_onboarding_sessions s LEFT JOIN marketing_agent_onboarding_participants p ON p.session_id = s.id
+      GROUP BY s.id ORDER BY s.session_date DESC, s.start_time DESC`);
+    res.json({ sessions });
+  } catch (error) { fail(res, error, 'Failed to list onboarding sessions'); }
+});
+
+router.post('/onboarding-sessions', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (req, res) => {
+  try {
+    if (!req.body.title || !req.body.session_date) return res.status(400).json({ error: 'Title and session date are required' });
+    const result = await db.run(`INSERT INTO marketing_agent_onboarding_sessions (title, description, session_date, start_time, end_time, venue, meeting_link, facilitators, materials, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [req.body.title, req.body.description || null, req.body.session_date, req.body.start_time || null, req.body.end_time || null, req.body.venue || null, req.body.meeting_link || null, req.body.facilitators || null, req.body.materials || null, req.body.status || 'SCHEDULED', req.user.id]);
+    await logAction(req.user.id, 'create_onboarding_session', 'marketing_agent_onboarding_sessions', result.lastID, {}, req);
+    res.status(201).json({ id: result.lastID });
+  } catch (error) { fail(res, error, 'Failed to create onboarding session'); }
+});
+
+router.get('/onboarding-sessions/:id/participants', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (req, res) => {
+  try {
+    const participants = await db.all(`SELECT p.*, a.full_name, a.agent_code, a.status AS agent_status FROM marketing_agent_onboarding_participants p
+      JOIN marketing_agents a ON a.id = p.agent_id WHERE p.session_id = ? ORDER BY a.full_name`, [req.params.id]);
+    res.json({ participants });
+  } catch (error) { fail(res, error, 'Failed to list participants'); }
+});
+
+router.post('/onboarding-sessions/:id/participants', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (req, res) => {
+  try {
+    const agentId = Number(req.body.agent_id);
+    const agent = await db.get('SELECT id FROM marketing_agents WHERE id = ?', [agentId]);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    await db.run(`INSERT INTO marketing_agent_onboarding_participants (session_id, agent_id, attendance_status, completion_status, remarks) VALUES (?, ?, 'INVITED', 'PENDING', ?)
+      ON CONFLICT(session_id, agent_id) DO NOTHING`, [req.params.id, agentId, req.body.remarks || null]);
+    res.status(201).json({ ok: true });
+  } catch (error) { fail(res, error, 'Failed to add onboarding participant'); }
+});
+
+router.put('/onboarding-sessions/:id/participants/:participantId', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (req, res) => {
+  try {
+    const attendance = req.body.attendance_status || 'INVITED';
+    const completion = req.body.completion_status || 'PENDING';
+    if (!['INVITED', 'PRESENT', 'ABSENT', 'REMOTE'].includes(attendance)) return res.status(400).json({ error: 'Invalid attendance status' });
+    await db.run(`UPDATE marketing_agent_onboarding_participants SET attendance_status = ?, assessment_score = ?, completion_status = ?, remarks = ? WHERE id = ? AND session_id = ?`, [attendance, req.body.assessment_score ?? null, completion, req.body.remarks || null, req.params.participantId, req.params.id]);
+    res.json({ ok: true });
+  } catch (error) { fail(res, error, 'Failed to update participant'); }
+});
+
 router.get('/agents/:id', authenticateToken, async (req, res) => {
   try {
     const agent = await db.get(
@@ -657,6 +724,8 @@ router.post('/agents/:id/activate', authenticateToken, svc.requirePerm('marketin
     if (!req.body.confirm) return res.status(400).json({ error: 'Confirmation is required' });
     const agent = await db.get('SELECT * FROM marketing_agents WHERE id = ?', [req.params.id]);
     if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    if (!agent.onboarding_approved_at) return res.status(400).json({ error: 'Approve onboarding before activation' });
+    if (!agent.user_id) return res.status(400).json({ error: 'Provision the agent portal account to activate this agent' });
     if (agent.agent_code) return res.status(409).json({ error: 'Agent ID already issued and cannot be regenerated', agent_code: agent.agent_code });
     if (!(await svc.onboardingComplete(agent.id))) {
       return res.status(400).json({ error: 'Mandatory onboarding items must be completed or waived before activation' });
@@ -684,6 +753,46 @@ router.post('/agents/:id/activate', authenticateToken, svc.requirePerm('marketin
   }
 });
 
+// Approval and provisioning are intentionally separate: attendance alone never
+// activates an agent or creates a credential.
+router.post('/agents/:id/approve-onboarding', authenticateToken, svc.requirePerm('marketing_agent.activate'), async (req, res) => {
+  try {
+    if (!req.body.confirm) return res.status(400).json({ error: 'Confirmation is required' });
+    const agent = await db.get('SELECT * FROM marketing_agents WHERE id = ?', [req.params.id]);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    if (!(await svc.onboardingComplete(agent.id))) return res.status(400).json({ error: 'All mandatory onboarding requirements must be completed or formally waived' });
+    await db.run(`UPDATE marketing_agents SET onboarding_approved_by = ?, onboarding_approved_at = CURRENT_TIMESTAMP, status = 'ONBOARDING_APPROVED', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [req.user.id, agent.id]);
+    await db.run(`INSERT INTO marketing_agent_status_history (agent_id, status, effective_date, reason, approved_by) VALUES (?, 'ONBOARDING_APPROVED', date('now'), ?, ?)`, [agent.id, req.body.reason || 'Management onboarding approval', req.user.id]);
+    await logAction(req.user.id, 'approve_agent_onboarding', 'marketing_agents', agent.id, {}, req);
+    res.json({ status: 'ONBOARDING_APPROVED' });
+  } catch (error) { fail(res, error, 'Failed to approve onboarding'); }
+});
+
+router.post('/agents/:id/provision-account', authenticateToken, svc.requirePerm('marketing_agent.activate'), async (req, res) => {
+  try {
+    if (!req.body.confirm) return res.status(400).json({ error: 'Confirmation is required' });
+    const agent = await db.get('SELECT * FROM marketing_agents WHERE id = ?', [req.params.id]);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
+    if (agent.user_id) return res.status(409).json({ error: 'An account is already provisioned for this agent' });
+    if (!agent.onboarding_approved_at || !(await svc.onboardingComplete(agent.id))) return res.status(400).json({ error: 'Management onboarding approval is required before provisioning' });
+    const username = await nextAgentUsername(agent.full_name);
+    // Bootstrap secret is never returned, logged, or persisted in plaintext.
+    const passwordHash = await hashPassword(process.env.AGENT_BOOTSTRAP_PASSWORD || 'SvlAgent2026!');
+    const recoveryEmail = String(agent.email || '').trim().toLowerCase();
+    if (!recoveryEmail) return res.status(422).json({ error: 'A verified applicant email is required for account recovery before provisioning' });
+    const emailInUse = await db.get('SELECT id FROM users WHERE lower(email) = lower(?)', [recoveryEmail]);
+    if (emailInUse) return res.status(409).json({ error: 'The applicant email is already linked to another user account' });
+    const user = await db.run(`INSERT INTO users (email, username, password_hash, role, name, phone, is_active, email_verified, must_change_password, session_version)
+      VALUES (?, ?, ?, 'FreelanceMarketingAgent', ?, ?, 1, 0, 1, 1)`, [recoveryEmail, username, passwordHash, agent.full_name, agent.phone || null]);
+    const agentCode = agent.agent_code || await svc.nextAgentCode();
+    await db.run(`UPDATE marketing_agents SET user_id = ?, agent_code = ?, status = 'ACTIVE', referral_eligible = 1, activation_date = date('now'), account_provisioned_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [user.lastID, agentCode, agent.id]);
+    await db.run(`INSERT INTO marketing_agent_status_history (agent_id, status, effective_date, reason, approved_by) VALUES (?, 'ACCOUNT_PROVISIONED', date('now'), 'Agent portal account provisioned', ?)`, [agent.id, req.user.id]);
+    await logAction(req.user.id, 'provision_agent_account', 'marketing_agents', agent.id, { username, agentCode }, req);
+    await svc.notifyRole(['Admin', 'DepartmentHead'], 'Agent account provisioned', `${agent.full_name} was provisioned as ${agentCode}`, `/marketing/agents/${agent.id}`);
+    res.status(201).json({ agent_code: agentCode, username, must_change_password: true });
+  } catch (error) { fail(res, error, 'Failed to provision agent account'); }
+});
+
 router.post('/agents/:id/status', authenticateToken, async (req, res) => {
   try {
     const { status, reason, effective_date, confirm } = req.body;
@@ -698,14 +807,16 @@ router.post('/agents/:id/status', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
     if (!reason) return res.status(400).json({ error: 'A reason is required' });
+    const agent = await db.get('SELECT status FROM marketing_agents WHERE id = ?', [req.params.id]);
+    if (!agent) return res.status(404).json({ error: 'Agent not found' });
     const eligible = status === 'ACTIVE' ? 1 : 0;
     await db.run(
       `UPDATE marketing_agents SET status = ?, referral_eligible = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [status, eligible, req.params.id]
     );
     await db.run(
-      `INSERT INTO marketing_agent_status_history (agent_id, status, effective_date, reason, approved_by) VALUES (?, ?, ?, ?, ?)`,
-      [req.params.id, status, effective_date || new Date().toISOString().slice(0, 10), reason, req.user.id]
+      `INSERT INTO marketing_agent_status_history (agent_id, previous_status, status, effective_date, reason, remarks, supporting_document, approved_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [req.params.id, agent.status, status, effective_date || new Date().toISOString().slice(0, 10), reason, req.body.remarks || null, req.body.supporting_document || null, req.user.id]
     );
     await logAction(req.user.id, 'agent_status', 'marketing_agents', req.params.id, { status, reason }, req);
     res.json({ status });
@@ -1005,6 +1116,9 @@ router.post('/payments/:id/verify', authenticateToken, svc.requirePerm('commissi
         payment.amount, rated.rate, rated.gross, rated.gross, policy.id
       ]
     );
+    await db.run(`INSERT INTO agent_wallet_ledger_entries (entry_reference, agent_id, commission_id, transaction_type, balance_bucket, amount, currency, description, created_by)
+      VALUES (?, ?, ?, 'COMMISSION_CREDIT', 'PENDING', ?, ?, ?, ?)`,
+      [`${number}-PENDING`, contract.referral_agent_id, created.lastID, rated.gross, payment.currency || 'USD', `Commission calculated from verified payment ${payment.payment_number}`, req.user.id]);
     await logAction(req.user.id, 'calculate_commission', 'commissions', created.lastID, { number, policy: policy.policy_code }, req);
     res.json({ verified: true, commission_id: created.lastID, commission_number: number, final_commission: rated.gross });
   } catch (error) {
@@ -1074,6 +1188,18 @@ router.post('/commissions/:id/status', authenticateToken, async (req, res) => {
        WHERE id = ?`,
       [next, next, req.user.id, next, next, req.body.payment_reference || null, commission.id]
     );
+    if (next === 'APPROVED' && commission.status !== 'APPROVED') {
+      const existingRelease = await db.get("SELECT id FROM agent_wallet_ledger_entries WHERE commission_id = ? AND transaction_type = 'COMMISSION_RELEASE'", [commission.id]);
+      if (!existingRelease) {
+        await db.run(`INSERT INTO agent_wallet_ledger_entries (entry_reference, agent_id, commission_id, transaction_type, balance_bucket, amount, currency, description, created_by)
+          VALUES (?, ?, ?, 'COMMISSION_RELEASE', 'AVAILABLE', ?, 'USD', ?, ?)`,
+          [`${commission.commission_number}-AVAILABLE`, commission.agent_id, commission.id, commission.final_commission, `Commission ${commission.commission_number} approved for payout`, req.user.id]);
+        // Offset pending amount; balances are always ledger-derived.
+        await db.run(`INSERT INTO agent_wallet_ledger_entries (entry_reference, agent_id, commission_id, transaction_type, balance_bucket, amount, currency, description, created_by)
+          VALUES (?, ?, ?, 'COMMISSION_PENDING_RELEASE', 'PENDING', ?, 'USD', ?, ?)`,
+          [`${commission.commission_number}-PENDING-RELEASE`, commission.agent_id, commission.id, -Number(commission.final_commission), `Commission ${commission.commission_number} moved to available`, req.user.id]);
+      }
+    }
     await logAction(req.user.id, 'commission_status', 'commissions', commission.id, { from: commission.status, to: next }, req);
     res.json({ status: next });
   } catch (error) {
@@ -1096,6 +1222,10 @@ router.post('/commissions/:id/adjustments', authenticateToken, svc.requirePerm('
       `UPDATE commissions SET adjustment = adjustment + ?, final_commission = ?, status = CASE WHEN ? < 0 THEN 'REVERSED' ELSE status END, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       [amount, nextFinal, amount, commission.id]
     );
+    const bucket = ['APPROVED', 'PAYMENT_SCHEDULED', 'PAID'].includes(commission.status) ? 'AVAILABLE' : 'PENDING';
+    await db.run(`INSERT INTO agent_wallet_ledger_entries (entry_reference, agent_id, commission_id, transaction_type, balance_bucket, amount, currency, description, created_by)
+      VALUES (?, ?, ?, 'COMMISSION_ADJUSTMENT', ?, ?, 'USD', ?, ?)`,
+      [`${commission.commission_number}-ADJ-${Date.now()}`, commission.agent_id, commission.id, bucket, amount, req.body.reason, req.user.id]);
     await logAction(req.user.id, 'commission_adjustment', 'commissions', commission.id, { amount, reason: req.body.reason }, req);
     res.status(201).json({ final_commission: nextFinal });
   } catch (error) {
@@ -1292,6 +1422,73 @@ router.get('/weekly-reports', authenticateToken, svc.requirePerm('reports.view')
   } catch (error) {
     fail(res, error, 'Failed to list weekly reports');
   }
+});
+
+router.post('/weekly-reports/:id/review', authenticateToken, svc.requirePerm('marketing_agent.edit'), async (req, res) => {
+  try {
+    const report = await db.get('SELECT * FROM agent_weekly_reports WHERE id = ?', [req.params.id]);
+    if (!report) return res.status(404).json({ error: 'Weekly report not found' });
+    const status = req.body.status || 'APPROVED';
+    if (!['UNDER_REVIEW', 'REVISION_REQUESTED', 'APPROVED', 'REJECTED'].includes(status)) return res.status(400).json({ error: 'Invalid review status' });
+    const result = await db.run(`INSERT INTO agent_weekly_report_reviews (report_id, reviewer_id, score, rating, feedback, recommendations, internal_notes, judgment, published_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? IN ('APPROVED','REVISION_REQUESTED','REJECTED') THEN CURRENT_TIMESTAMP ELSE NULL END)`, [report.id, req.user.id, req.body.score ?? null, req.body.rating || null, req.body.feedback || null, req.body.recommendations || null, req.body.internal_notes || null, req.body.judgment || null, status]);
+    await db.run('UPDATE agent_weekly_reports SET status = ? WHERE id = ?', [status, report.id]);
+    const agent = await db.get('SELECT user_id, full_name FROM marketing_agents WHERE id = ?', [report.agent_id]);
+    if (agent?.user_id) await db.run(`INSERT INTO notifications (user_id, title, message, type, link) VALUES (?, ?, ?, 'info', ?)`, [agent.user_id, 'Weekly report feedback published', `Management reviewed your report for ${report.week_start}.`, '/agent/reports']);
+    await logAction(req.user.id, 'review_agent_weekly_report', 'agent_weekly_reports', report.id, { status, reviewId: result.lastID }, req);
+    res.status(201).json({ status, review_id: result.lastID });
+  } catch (error) { fail(res, error, 'Failed to review weekly report'); }
+});
+
+router.get('/monthly-reports', authenticateToken, svc.requirePerm('reports.view'), async (req, res) => {
+  try {
+    const reports = await db.all(`SELECT r.*, a.full_name, a.agent_code, rv.score, rv.rating, rv.feedback, rv.judgment
+      FROM agent_monthly_reports r JOIN marketing_agents a ON a.id = r.agent_id
+      LEFT JOIN agent_monthly_report_reviews rv ON rv.report_id = r.id ORDER BY r.report_month DESC, a.full_name`);
+    res.json({ reports });
+  } catch (error) { fail(res, error, 'Failed to list monthly reports'); }
+});
+
+router.post('/monthly-reports/:id/review', authenticateToken, svc.requirePerm('marketing_agent.edit'), async (req, res) => {
+  try {
+    const report = await db.get('SELECT * FROM agent_monthly_reports WHERE id = ?', [req.params.id]);
+    if (!report) return res.status(404).json({ error: 'Monthly report not found' });
+    const result = await db.run(`INSERT INTO agent_monthly_report_reviews (report_id, reviewer_id, score, rating, feedback, internal_notes, judgment, approved_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`, [report.id, req.user.id, req.body.score ?? null, req.body.rating || null, req.body.feedback || null, req.body.internal_notes || null, req.body.judgment || null]);
+    await db.run(`UPDATE agent_monthly_reports SET status = 'APPROVED', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [report.id]);
+    const agent = await db.get('SELECT user_id FROM marketing_agents WHERE id = ?', [report.agent_id]);
+    if (agent?.user_id) await db.run(`INSERT INTO notifications (user_id, title, message, type, link) VALUES (?, 'Monthly report reviewed', 'Management published your monthly report review.', 'info', '/agent/reports')`, [agent.user_id]);
+    await logAction(req.user.id, 'review_agent_monthly_report', 'agent_monthly_reports', report.id, { reviewId: result.lastID }, req);
+    res.status(201).json({ review_id: result.lastID, status: 'APPROVED' });
+  } catch (error) { fail(res, error, 'Failed to review monthly report'); }
+});
+
+router.get('/payout-requests', authenticateToken, svc.requirePerm('commission.review'), async (_req, res) => {
+  try {
+    const requests = await db.all(`SELECT p.*, a.full_name, a.agent_code FROM agent_payout_requests p JOIN marketing_agents a ON a.id = p.agent_id ORDER BY p.created_at DESC`);
+    res.json({ requests });
+  } catch (error) { fail(res, error, 'Failed to list payout requests'); }
+});
+
+router.post('/payout-requests/:id/status', authenticateToken, svc.requirePerm('commission.pay'), async (req, res) => {
+  try {
+    const next = req.body.status;
+    if (!['UNDER_REVIEW', 'APPROVED', 'PROCESSING', 'PAID', 'REJECTED', 'CANCELLED'].includes(next)) return res.status(400).json({ error: 'Invalid payout status' });
+    const payout = await db.get('SELECT * FROM agent_payout_requests WHERE id = ?', [req.params.id]);
+    if (!payout) return res.status(404).json({ error: 'Payout request not found' });
+    if (payout.status === 'PAID' && next !== 'PAID') return res.status(409).json({ error: 'Paid requests cannot be changed; use a separate financial adjustment' });
+    if (next === 'PAID' && payout.status !== 'PAID') {
+      const balance = await db.get(`SELECT COALESCE(SUM(CASE WHEN balance_bucket='AVAILABLE' THEN amount ELSE 0 END),0) amount FROM agent_wallet_ledger_entries WHERE agent_id = ?`, [payout.agent_id]);
+      if (Number(balance.amount || 0) < Number(payout.requested_amount)) return res.status(409).json({ error: 'Available wallet balance is insufficient at payment time' });
+      await db.run(`INSERT INTO agent_wallet_ledger_entries (entry_reference, agent_id, payout_request_id, transaction_type, balance_bucket, amount, currency, description, created_by)
+        VALUES (?, ?, ?, 'PAYOUT_DEBIT', 'AVAILABLE', ?, ?, ?, ?)`, [`${payout.request_reference}-PAID`, payout.agent_id, payout.id, -Number(payout.requested_amount), payout.currency, `Paid payout request ${payout.request_reference}`, req.user.id]);
+    }
+    await db.run(`UPDATE agent_payout_requests SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, paid_at = CASE WHEN ? = 'PAID' THEN CURRENT_TIMESTAMP ELSE paid_at END WHERE id = ?`, [next, req.user.id, next, payout.id]);
+    const agent = await db.get('SELECT user_id FROM marketing_agents WHERE id = ?', [payout.agent_id]);
+    if (agent?.user_id) await db.run(`INSERT INTO notifications (user_id, title, message, type, link) VALUES (?, 'Payout request updated', ?, 'info', '/agent/wallet')`, [agent.user_id, `Your payout request ${payout.request_reference} is ${next}.`]);
+    await logAction(req.user.id, 'payout_request_status', 'agent_payout_requests', payout.id, { from: payout.status, to: next }, req);
+    res.json({ status: next });
+  } catch (error) { fail(res, error, 'Failed to update payout request'); }
 });
 
 router.get('/weekly-reports/prefill', authenticateToken, svc.requirePerm('reports.view'), async (req, res) => {

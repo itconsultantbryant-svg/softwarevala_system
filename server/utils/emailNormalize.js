@@ -33,7 +33,7 @@ function loginLookupVariants(loginId) {
 }
 
 const USER_LOGIN_COLUMNS = `
-  id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified
+  id, email, username, password_hash, role, name, phone, profile_image, is_active, email_verified, must_change_password, session_version, failed_login_attempts, lockout_until
 `;
 
 async function findUserByLoginId(db, loginId) {

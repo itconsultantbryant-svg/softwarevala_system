@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import NavigateToAppHome from './components/NavigateToAppHome';
@@ -7,6 +7,8 @@ import ErrorBoundary from './components/ErrorBoundary';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Login from './pages/auth/Login';
+import RequiredPasswordChange from './pages/auth/RequiredPasswordChange';
+import AgentPortal from './pages/agent/AgentPortal';
 import Dashboard from './pages/Dashboard';
 import DepartmentManagement from './pages/departments/DepartmentManagement';
 import DepartmentView from './pages/departments/DepartmentView';
@@ -44,6 +46,7 @@ import ApplicationProfile from './pages/marketing/ApplicationProfile';
 import { Agents, AgentProfile } from './pages/marketing/Agents';
 import { LeadsBoard, LeadProfile, Commissions, ContractsPage } from './pages/marketing/Pipeline';
 import { WeeklyReports, PerformancePage, MarketingReports } from './pages/marketing/Operations';
+import AgentWorkflowManagement from './pages/marketing/AgentWorkflowManagement';
 import StaffClientReports from './pages/staff/StaffClientReports';
 import PettyCashLedger from './pages/finance/PettyCashLedger';
 import AssetRegistry from './pages/finance/AssetRegistry';
@@ -83,6 +86,7 @@ function App() {
           <div className="App">
             <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/change-password" element={<PrivateRoute><RequiredPasswordChange /></PrivateRoute>} />
             {/* Certificate routes disabled
             <Route path="/certificates/verify/:code" element={<CertificateVerification />} />
             <Route path="/verify-certificate" element={<PublicVerification />} />
@@ -98,7 +102,14 @@ function App() {
                         <TopBar />
                         <Routes>
                           <Route path="/" element={<NavigateToAppHome />} />
-                          <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+                           <Route path="/agent/dashboard" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal /></PrivateRoute>} />
+                           <Route path="/agent/leads" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="leads" /></PrivateRoute>} />
+                           <Route path="/agent/add-client" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="add-client" /></PrivateRoute>} />
+                           <Route path="/agent/wallet" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="wallet" /></PrivateRoute>} />
+                           <Route path="/agent/reports" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="reports" /></PrivateRoute>} />
+                           <Route path="/agent/monthly-reports" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="monthly" /></PrivateRoute>} />
+                           <Route path="/agent/targets" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="targets" /></PrivateRoute>} />
                           <Route path="/staff-dashboard" element={<PrivateRoute requiredRole="Staff"><StaffDashboard /></PrivateRoute>} />
                           <Route path="/staff-client-reports" element={<PrivateRoute requiredRole="Staff"><StaffClientReports /></PrivateRoute>} />
                           <Route path="/users" element={<PrivateRoute requiredRole="Admin"><UserManagement /></PrivateRoute>} />
@@ -152,7 +163,8 @@ function App() {
                           <Route path="/marketing/weekly-reports" element={<PrivateRoute><WeeklyReports /></PrivateRoute>} />
                           <Route path="/marketing/performance" element={<PrivateRoute><PerformancePage /></PrivateRoute>} />
                           <Route path="/marketing/reports" element={<PrivateRoute><MarketingReports /></PrivateRoute>} />
-                          <Route path="/marketing/contracts" element={<PrivateRoute><ContractsPage /></PrivateRoute>} />
+                           <Route path="/marketing/contracts" element={<PrivateRoute><ContractsPage /></PrivateRoute>} />
+                           <Route path="/marketing/agent-workflows" element={<PrivateRoute requiredRoles={['Admin', 'DepartmentHead']}><AgentWorkflowManagement /></PrivateRoute>} />
                           <Route path="/profile" element={<Profile />} />
                           {/* Student / instructor portal routes disabled
                           <Route path="/instructor-dashboard" element={<PrivateRoute requiredRole="Instructor"><InstructorDashboard /></PrivateRoute>} />
@@ -182,4 +194,3 @@ function App() {
 }
 
 export default App;
-

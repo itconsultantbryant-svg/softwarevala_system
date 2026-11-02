@@ -15,6 +15,14 @@ function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
+async function recordLoginActivity(userId, identifier, success, req) {
+  try {
+    await db.run(`INSERT INTO auth_login_activity (user_id, login_identifier, success, ip_address, user_agent) VALUES (?, ?, ?, ?, ?)`, [
+      userId || null, String(identifier || '').slice(0, 254), success ? 1 : 0, req.ip || null, req.get('user-agent') || null
+    ]);
+  } catch (_error) { /* login remains available if monitoring storage is unavailable */ }
+}
+
 // Registration removed - users are created by admin only
 
 // Login
@@ -22,17 +30,9 @@ router.post('/login', [
   body('email').trim().notEmpty().withMessage('Email or username is required'),
   body('password').notEmpty().withMessage('Password is required')
 ], async (req, res) => {
-  const requestStartTime = Date.now();
-  console.log('=== LOGIN ROUTE HIT ===');
-  console.log('Time:', new Date().toISOString());
-  console.log('Request body received:', !!req.body, 'Email:', req.body?.email);
-  
   try {
     const errors = validationResult(req);
-    console.log('Validation completed in:', Date.now() - requestStartTime, 'ms');
     if (!errors.isEmpty()) {
-      console.error('Validation errors:', JSON.stringify(errors.array(), null, 2));
-      console.error('Request body:', JSON.stringify(req.body, null, 2));
       const errorMessages = errors.array().map(e => e.msg || e.message || e.param).join(', ');
       return res.status(400).json({ 
         error: 'Validation failed: ' + errorMessages,
@@ -43,67 +43,65 @@ router.post('/login', [
     const { email, password } = req.body;
 
     const loginId = (email || '').trim();
-    console.log('Login attempt for:', loginId);
-
     let user = await findUserByLoginId(db, loginId);
 
     if (!user) {
+      await recordLoginActivity(null, loginId, false, req);
       return res.status(401).json({ error: 'Invalid email/username or password' });
     }
+    if (user.lockout_until && new Date(user.lockout_until).getTime() > Date.now()) {
+      await recordLoginActivity(user.id, loginId, false, req);
+      return res.status(429).json({ error: 'Too many unsuccessful attempts. Please try again later.' });
+    }
 
-    console.log('User found:', { id: user.id, email: user.email, role: user.role, is_active: user.is_active });
-
-    // Allow Admin, DepartmentHead, Staff, Student, and Instructor to log in (case-insensitive)
-    const allowedRoles = ['Admin', 'DepartmentHead', 'Staff', 'Student', 'Instructor'];
+    // Roles are explicitly allow-listed; agent access is constrained further by
+    // the linked active marketing_agents profile below.
+    const allowedRoles = ['Admin', 'DepartmentHead', 'Staff', 'Student', 'Instructor', 'FreelanceMarketingAgent'];
     const roleNorm = (user.role || '').trim();
     const canonicalRole = allowedRoles.find(r => r.toLowerCase() === roleNorm.toLowerCase());
     if (!canonicalRole) {
-      console.log('Login denied - role not allowed:', user.role);
+      await recordLoginActivity(user.id, loginId, false, req);
       return res.status(403).json({ error: 'Login access restricted. Contact administrator.' });
+    }
+    if (req.baseUrl.endsWith('/agent-auth') && canonicalRole !== 'FreelanceMarketingAgent') {
+      await recordLoginActivity(user.id, loginId, false, req);
+      return res.status(403).json({ error: 'Use the main SVL sign-in for this account.' });
     }
 
     // Student and Instructor can always log in with their email/password (even when pending approval).
     // Other roles require is_active.
     const canBypassActive = canonicalRole === 'Student' || canonicalRole === 'Instructor';
     if (!canBypassActive && !user.is_active) {
-      console.log('Account is deactivated for user:', user.id);
+      await recordLoginActivity(user.id, loginId, false, req);
       return res.status(403).json({ error: 'Account is deactivated. Please contact administrator.' });
+    }
+    if (canonicalRole === 'FreelanceMarketingAgent') {
+      const agent = await db.get('SELECT status FROM marketing_agents WHERE user_id = ?', [user.id]);
+      if (!agent || agent.status !== 'ACTIVE') {
+        await recordLoginActivity(user.id, loginId, false, req);
+        return res.status(403).json({ error: 'Agent account is not active. Please contact management.' });
+      }
     }
 
     if (!user.password_hash) {
-      console.error('Password hash is missing for user:', user.id);
-      console.error('User details:', { id: user.id, email: user.email, role: user.role });
+      await recordLoginActivity(user.id, loginId, false, req);
       return res.status(500).json({ error: 'Account configuration error. Password not set. Please contact administrator to reset your password.' });
     }
 
-    // Verify password
-    console.log('Verifying password...');
-    console.log('Password hash exists:', !!user.password_hash);
-    console.log('Password hash length:', user.password_hash?.length);
-    console.log('Password provided length:', password.length);
-    console.log('User role:', user.role);
-    
-    // For debugging - check if password hash looks valid (bcrypt hashes start with $2a$, $2b$, or $2y$)
-    if (user.password_hash && !user.password_hash.startsWith('$2')) {
-      console.error('WARNING: Password hash does not appear to be a valid bcrypt hash!');
-      console.error('Hash starts with:', user.password_hash.substring(0, 10));
-    }
-    
     const isValidPassword = await comparePassword(password, user.password_hash);
-    console.log('Password verification result:', isValidPassword);
     
     if (!isValidPassword) {
-      console.log('Invalid password for user:', user.id);
-      console.log('User email:', user.email);
-      console.log('User role:', user.role);
-      console.log('Attempted password length:', password.length);
-      // Don't log the actual password for security
+      const failures = Number(user.failed_login_attempts || 0) + 1;
+      const lockout = failures >= 5 ? new Date(Date.now() + 15 * 60 * 1000).toISOString() : null;
+      await db.run('UPDATE users SET failed_login_attempts = ?, lockout_until = ? WHERE id = ?', [failures >= 5 ? 0 : failures, lockout, user.id]);
+      await recordLoginActivity(user.id, loginId, false, req);
       return res.status(401).json({ error: 'Invalid email or password' });
     }
 
     // Generate token with canonical role so route guards work correctly
     const token = generateToken({ ...user, role: canonicalRole });
-    console.log('Login successful for user:', user.id);
+    await db.run('UPDATE users SET last_login_at = CURRENT_TIMESTAMP, last_login_ip = ?, failed_login_attempts = 0, lockout_until = NULL WHERE id = ?', [req.ip || null, user.id]);
+    await recordLoginActivity(user.id, loginId, true, req);
 
     // Log action asynchronously (don't block login response)
     logAction(user.id, 'login', 'auth', user.id, {}, req).catch(err => {
@@ -118,7 +116,8 @@ router.post('/login', [
       name: user.name,
       phone: user.phone || null,
       profile_image: user.profile_image || null,
-      emailVerified: user.email_verified === 1
+      emailVerified: user.email_verified === 1,
+      mustChangePassword: !!user.must_change_password
     };
     if (canonicalRole === 'Staff') {
       const staff = await db.get('SELECT department, position FROM staff WHERE user_id = ?', [user.id]);
@@ -142,24 +141,13 @@ router.post('/login', [
     }
     userResponse = await attachAcademyContext(userResponse);
     
-    console.log('Login successful, returning user:', {
-      id: userResponse.id,
-      email: userResponse.email,
-      role: userResponse.role
-    });
-    
     // Prepare response data
     const responseData = {
       token,
       user: userResponse
     };
     
-    console.log('Sending response at:', new Date().toISOString());
-    
-    // Send response - res.json() handles everything properly
     res.json(responseData);
-    
-    console.log('Response sent successfully at:', new Date().toISOString());
   } catch (error) {
     console.error('Login error:', error);
     console.error('Error stack:', error.stack);
@@ -171,7 +159,7 @@ router.post('/login', [
 router.get('/me', authenticateToken, async (req, res) => {
   try {
     const user = await db.get(
-      `SELECT id, email, username, role, name, phone, profile_image, is_active, email_verified, created_at
+      `SELECT id, email, username, role, name, phone, profile_image, is_active, email_verified, must_change_password, created_at
        FROM users WHERE id = ?`,
       [req.user.id]
     );
@@ -180,7 +168,7 @@ router.get('/me', authenticateToken, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const canonicalRoles = { admin: 'Admin', departmenthead: 'DepartmentHead', staff: 'Staff', student: 'Student', instructor: 'Instructor' };
+    const canonicalRoles = { admin: 'Admin', departmenthead: 'DepartmentHead', staff: 'Staff', student: 'Student', instructor: 'Instructor', freelancemarketingagent: 'FreelanceMarketingAgent' };
     const rk = (user.role || '').trim().toLowerCase();
     if (canonicalRoles[rk]) user.role = canonicalRoles[rk];
 
@@ -227,6 +215,7 @@ router.get('/me', authenticateToken, async (req, res) => {
     }
 
     const enriched = await attachAcademyContext(user);
+    enriched.mustChangePassword = !!user.must_change_password;
     res.json({ user: enriched });
   } catch (error) {
     console.error('Get user error:', error);
@@ -369,7 +358,7 @@ router.post('/reset-password', [
     const passwordHash = await hashPassword(password);
 
     await db.run(
-      'UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires = NULL WHERE id = ?',
+      'UPDATE users SET password_hash = ?, password_reset_token = NULL, password_reset_expires = NULL, must_change_password = 0, session_version = COALESCE(session_version, 1) + 1 WHERE id = ?',
       [passwordHash, user.id]
     );
 
@@ -390,7 +379,7 @@ router.post('/change-password', authenticateToken, [
   try {
     const { currentPassword, newPassword } = req.body;
 
-    const user = await db.get('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+    const user = await db.get('SELECT password_hash, session_version, role, email, username, name, phone, profile_image, email_verified FROM users WHERE id = ?', [req.user.id]);
 
     const isValidPassword = await comparePassword(currentPassword, user.password_hash);
     if (!isValidPassword) {
@@ -399,11 +388,12 @@ router.post('/change-password', authenticateToken, [
 
     const passwordHash = await hashPassword(newPassword);
 
-    await db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, req.user.id]);
+    await db.run('UPDATE users SET password_hash = ?, must_change_password = 0, session_version = COALESCE(session_version, 1) + 1 WHERE id = ?', [passwordHash, req.user.id]);
 
     await logAction(req.user.id, 'password_changed', 'auth', req.user.id, {}, req);
 
-    res.json({ message: 'Password changed successfully' });
+    const freshToken = generateToken({ ...user, session_version: Number(user.session_version || 1) + 1 });
+    res.json({ message: 'Password changed successfully', token: freshToken, user: { id: req.user.id, email: user.email, username: user.username, name: user.name, phone: user.phone, profile_image: user.profile_image, role: user.role, emailVerified: user.email_verified === 1, mustChangePassword: false } });
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ error: 'Failed to change password' });
@@ -411,4 +401,3 @@ router.post('/change-password', authenticateToken, [
 });
 
 module.exports = router;
-

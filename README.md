@@ -53,6 +53,12 @@ See [DEPLOY_NEON.md](./DEPLOY_NEON.md) for the Neon Function, database, and Verc
 
 - Backend: copy `server/.env.example` to `server/.env` for local development.
 - Frontend: `client/.env.production` for production API URL fallback.
+- Agent portal: set `AGENT_BOOTSTRAP_PASSWORD` only in the backend secret store if a bootstrap credential is required. Every provisioned Agent account is forced to replace it on first login.
+- Set `AUTH_LOGIN_MAX_ATTEMPTS` to tune the 15-minute login request limit (default: `10`). Account-level lockout occurs after five failed credentials for 15 minutes.
+
+## Freelance Marketing Agent portal
+
+The Agent portal is integrated with the existing marketing-agent, central CRM, payment, commission, notification, and audit tables. Managers must complete onboarding, record management approval, and provision an account before activation. Agent JWTs are server-side restricted to `/api/agent` ownership-scoped APIs; they cannot access legacy company-wide modules.
 
 ## License
 
