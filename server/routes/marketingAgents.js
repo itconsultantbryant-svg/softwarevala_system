@@ -719,16 +719,28 @@ router.post('/agents/:id/onboarding/:itemId', authenticateToken, svc.requirePerm
         [req.user.id, req.body.notes || null, req.user.id, req.body.reason, req.params.itemId, req.params.id]
       );
     } else if (status === 'COMPLETED') {
-      // Use a direct update rather than parameterized CASE expressions. This
-      // works identically in SQLite and Neon PostgreSQL and avoids PostgreSQL
-      // inferring incompatible parameter types in the CASE branches.
+      // `status`, `id`, and `agent_id` are the original onboarding contract.
+      // Update those first so a legacy production table missing optional audit
+      // columns cannot prevent a checklist item from being completed.
       update = await db.run(
         `UPDATE marketing_agent_onboarding_items
-         SET status = 'COMPLETED', completed_by = ?, completed_at = CURRENT_TIMESTAMP,
-             notes = ?
+         SET status = 'COMPLETED'
          WHERE id = ? AND agent_id = ?`,
-        [req.user.id, req.body.notes || null, req.params.itemId, req.params.id]
+        [req.params.itemId, req.params.id]
       );
+      // Preserve audit metadata where the additive columns are available, but
+      // never roll back a successful completion because that metadata upgrade
+      // has not reached production yet.
+      try {
+        await db.run(
+          `UPDATE marketing_agent_onboarding_items
+           SET completed_by = ?, completed_at = CURRENT_TIMESTAMP, notes = ?
+           WHERE id = ? AND agent_id = ?`,
+          [req.user.id, req.body.notes || null, req.params.itemId, req.params.id]
+        );
+      } catch (metadataError) {
+        console.warn('Onboarding completion metadata was not recorded:', metadataError.message);
+      }
     } else {
       update = await db.run(
         `UPDATE marketing_agent_onboarding_items
