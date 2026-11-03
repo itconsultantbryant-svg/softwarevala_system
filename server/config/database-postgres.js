@@ -141,6 +141,15 @@ class PostgreSQLDatabase {
     return /connection terminated|connection reset|timeout exceeded when trying to connect|server closed the connection/i.test(String(error.message || ''));
   }
 
+  _isMissingTableError(error) {
+    // PostgreSQL uses 42P01 for an undefined relation. Do not treat a missing
+    // column (42703) as a missing table: callers such as auth's schema
+    // compatibility fallback must receive that error so they can retry a
+    // legacy-column query.
+    if (String(error?.code || '') === '42P01') return true;
+    return /relation\s+"?[\w.]+"?\s+does not exist/i.test(String(error?.message || ''));
+  }
+
   async _query(text, params = []) {
     if (!this.pool) throw new Error('Database not connected');
     let lastError;
@@ -187,8 +196,8 @@ class PostgreSQLDatabase {
       const result = await this._query(pgSql, params);
       return result.rows;
     } catch (err) {
-      // If table doesn't exist, return empty array instead of error
-      if (err.message && err.message.includes('does not exist')) {
+      // If a table doesn't exist, return an empty result instead of error.
+      if (this._isMissingTableError(err)) {
         console.warn(`Table may not exist yet: ${err.message}`);
         console.warn(`Query: ${sql.substring(0, 100)}...`);
         return [];
@@ -209,8 +218,8 @@ class PostgreSQLDatabase {
       const result = await this._query(pgSql, params);
       return result.rows[0] || null;
     } catch (err) {
-      // If table doesn't exist, return null instead of error
-      if (err.message && err.message.includes('does not exist')) {
+      // If a table doesn't exist, return null instead of error.
+      if (this._isMissingTableError(err)) {
         console.warn(`Table may not exist yet: ${err.message}`);
         console.warn(`Query: ${sql.substring(0, 100)}...`);
         return null;
@@ -502,4 +511,3 @@ class PostgreSQLDatabase {
 }
 
 module.exports = new PostgreSQLDatabase();
-
