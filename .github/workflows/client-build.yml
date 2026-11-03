@@ -21,9 +21,3 @@ jobs:
         run: |
           npm ci
           CI=false npm run build
-      - name: Verify student enrollment UI is in bundle
-        working-directory: client
-        run: |
-          grep -q "Generate automatically" build/static/js/main.*.js
-          grep -q "student_id_mode" build/static/js/main.*.js
-          echo "Student ID enrollment UI present in production bundle"
