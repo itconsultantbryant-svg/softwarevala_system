@@ -709,22 +709,34 @@ router.post('/agents/:id/onboarding/:itemId', authenticateToken, svc.requirePerm
     // The old combined update referenced waived_by/waive_reason for every
     // request, so clicking Complete failed where those optional columns had
     // not yet been added.
-    const update = status === 'WAIVED'
-      ? await db.run(
+    let update;
+    if (status === 'WAIVED') {
+      update = await db.run(
         `UPDATE marketing_agent_onboarding_items
          SET status = 'WAIVED', completed_by = ?, completed_at = CURRENT_TIMESTAMP,
              notes = ?, waived_by = ?, waive_reason = ?
          WHERE id = ? AND agent_id = ?`,
         [req.user.id, req.body.notes || null, req.user.id, req.body.reason, req.params.itemId, req.params.id]
-      )
-      : await db.run(
+      );
+    } else if (status === 'COMPLETED') {
+      // Use a direct update rather than parameterized CASE expressions. This
+      // works identically in SQLite and Neon PostgreSQL and avoids PostgreSQL
+      // inferring incompatible parameter types in the CASE branches.
+      update = await db.run(
         `UPDATE marketing_agent_onboarding_items
-         SET status = ?, completed_by = CASE WHEN ? = 'COMPLETED' THEN ? ELSE NULL END,
-             completed_at = CASE WHEN ? = 'COMPLETED' THEN CURRENT_TIMESTAMP ELSE NULL END,
+         SET status = 'COMPLETED', completed_by = ?, completed_at = CURRENT_TIMESTAMP,
              notes = ?
          WHERE id = ? AND agent_id = ?`,
-        [status, status, req.user.id, status, req.body.notes || null, req.params.itemId, req.params.id]
+        [req.user.id, req.body.notes || null, req.params.itemId, req.params.id]
       );
+    } else {
+      update = await db.run(
+        `UPDATE marketing_agent_onboarding_items
+         SET status = ?, completed_by = NULL, completed_at = NULL, notes = ?
+         WHERE id = ? AND agent_id = ?`,
+        [status, req.body.notes || null, req.params.itemId, req.params.id]
+      );
+    }
     if (!update.changes) return res.status(404).json({ error: 'Onboarding item not found for this agent' });
     await logAction(req.user.id, 'onboarding_item', 'marketing_agents', req.params.id, { itemId: req.params.itemId, status }, req);
     res.json({ ok: true });

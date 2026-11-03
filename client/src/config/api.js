@@ -5,6 +5,9 @@ const API_BASE_URL = getApiBaseUrl();
 
 const isRetryable = (error) => {
   if (!error.config || error.config.__retryCount >= 3) return false;
+  // Retrying writes can create duplicate side effects and obscures the actual
+  // server error. Callers can explicitly retry a safe, idempotent operation.
+  if (!['get', 'head', 'options'].includes((error.config.method || 'get').toLowerCase())) return false;
   if (error.response && error.response.status >= 400 && error.response.status < 500) return false;
   const code = error.code || '';
   return (
@@ -69,4 +72,3 @@ api.interceptors.response.use(
 );
 
 export default api;
-
