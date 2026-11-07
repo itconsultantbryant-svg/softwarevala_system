@@ -43,7 +43,7 @@ import StaffDashboard from './pages/staff/StaffDashboard';
 import SalesOverview from './pages/marketing/SalesOverview';
 import Applications from './pages/marketing/Applications';
 import ApplicationProfile from './pages/marketing/ApplicationProfile';
-import { Agents, AgentProfile } from './pages/marketing/Agents';
+import { Agents, AgentProfile, AgentAttendance } from './pages/marketing/Agents';
 import { LeadsBoard, LeadProfile, Commissions, ContractsPage } from './pages/marketing/Pipeline';
 import { WeeklyReports, PerformancePage, MarketingReports } from './pages/marketing/Operations';
 import AgentWorkflowManagement from './pages/marketing/AgentWorkflowManagement';
@@ -109,7 +109,8 @@ function App() {
                            <Route path="/agent/wallet" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="wallet" /></PrivateRoute>} />
                            <Route path="/agent/reports" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="reports" /></PrivateRoute>} />
                            <Route path="/agent/monthly-reports" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="monthly" /></PrivateRoute>} />
-                           <Route path="/agent/targets" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="targets" /></PrivateRoute>} />
+                            <Route path="/agent/targets" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="targets" /></PrivateRoute>} />
+                            <Route path="/agent/attendance" element={<PrivateRoute requiredRole="FreelanceMarketingAgent"><AgentPortal view="attendance" /></PrivateRoute>} />
                           <Route path="/staff-dashboard" element={<PrivateRoute requiredRole="Staff"><StaffDashboard /></PrivateRoute>} />
                           <Route path="/staff-client-reports" element={<PrivateRoute requiredRole="Staff"><StaffClientReports /></PrivateRoute>} />
                           <Route path="/users" element={<PrivateRoute requiredRole="Admin"><UserManagement /></PrivateRoute>} />
@@ -156,7 +157,8 @@ function App() {
                           <Route path="/marketing/applications" element={<PrivateRoute><Applications /></PrivateRoute>} />
                           <Route path="/marketing/applications/:id" element={<PrivateRoute><ApplicationProfile /></PrivateRoute>} />
                           <Route path="/marketing/agents" element={<PrivateRoute><Agents /></PrivateRoute>} />
-                          <Route path="/marketing/agents/:id" element={<PrivateRoute><AgentProfile /></PrivateRoute>} />
+                           <Route path="/marketing/agents/:id" element={<PrivateRoute><AgentProfile /></PrivateRoute>} />
+                           <Route path="/marketing/agent-attendance" element={<PrivateRoute requiredRoles={['Admin', 'DepartmentHead', 'Staff']}><AgentAttendance /></PrivateRoute>} />
                           <Route path="/marketing/leads" element={<PrivateRoute><LeadsBoard /></PrivateRoute>} />
                           <Route path="/marketing/leads/:id" element={<PrivateRoute><LeadProfile /></PrivateRoute>} />
                           <Route path="/marketing/commissions" element={<PrivateRoute><Commissions /></PrivateRoute>} />

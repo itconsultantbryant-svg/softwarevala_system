@@ -287,7 +287,8 @@ const Sidebar = () => {
       items.push(
         { path: '/agent/reports', label: 'Weekly Reports', icon: 'bi-calendar-week', roles: ['FreelanceMarketingAgent'] },
         { path: '/agent/monthly-reports', label: 'Monthly Reports', icon: 'bi-calendar-month', roles: ['FreelanceMarketingAgent'] },
-        { path: '/agent/targets', label: 'My Targets', icon: 'bi-bullseye', roles: ['FreelanceMarketingAgent'] }
+        { path: '/agent/targets', label: 'My Targets', icon: 'bi-bullseye', roles: ['FreelanceMarketingAgent'] },
+        { path: '/agent/attendance', label: 'Engagement Attendance', icon: 'bi-clock-history', roles: ['FreelanceMarketingAgent'] }
       );
     } else if (userRole === 'staff') {
       items.push({ path: '/staff-dashboard', label: 'Staff Dashboard', icon: 'bi-speedometer2', roles: ['Staff'] });
@@ -328,6 +329,7 @@ const Sidebar = () => {
         { path: '/marketing/agents?status=ACTIVE', label: 'Active Agents', icon: 'bi-person-badge', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/agents?status=SUSPENDED', label: 'Suspended', icon: 'bi-pause-circle', roles: ['Admin', 'DepartmentHead'] },
         { path: '/marketing/agents?status=TERMINATED', label: 'Former Agents', icon: 'bi-person-x', roles: ['Admin', 'DepartmentHead'] },
+        { path: '/marketing/agent-attendance', label: 'Agent Attendance', icon: 'bi-clock-history', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/commissions', label: 'Commissions', icon: 'bi-cash-coin', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/weekly-reports', label: 'Weekly Reports', icon: 'bi-calendar-week', roles: ['Admin', 'Staff', 'DepartmentHead'] },
         { path: '/marketing/agent-workflows', label: 'Agent Workflows', icon: 'bi-clipboard-check', roles: ['Admin', 'DepartmentHead'] },

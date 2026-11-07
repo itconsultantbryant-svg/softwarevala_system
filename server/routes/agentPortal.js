@@ -8,14 +8,18 @@ const svc = require('../utils/marketingAgentService');
 const router = express.Router();
 
 async function agentContext(req, res, next) {
-  if (!req.user || String(req.user.role).toLowerCase() !== 'freelancemarketingagent') {
-    return res.status(403).json({ error: 'Freelance Marketing Agent access is required' });
+  try {
+    if (!req.user || String(req.user.role).toLowerCase() !== 'freelancemarketingagent') {
+      return res.status(403).json({ error: 'Freelance Marketing Agent access is required' });
+    }
+    const agent = await db.get('SELECT * FROM marketing_agents WHERE user_id = ?', [req.user.id]);
+    if (!agent) return res.status(403).json({ error: 'No agent profile is linked to this account' });
+    if (agent.status !== 'ACTIVE') return res.status(403).json({ error: 'This agent account is not active' });
+    req.agent = agent;
+    next();
+  } catch (error) {
+    next(error);
   }
-  const agent = await db.get('SELECT * FROM marketing_agents WHERE user_id = ?', [req.user.id]);
-  if (!agent) return res.status(403).json({ error: 'No agent profile is linked to this account' });
-  if (agent.status !== 'ACTIVE') return res.status(403).json({ error: 'This agent account is not active' });
-  req.agent = agent;
-  next();
 }
 
 router.use(authenticateToken, agentContext);
@@ -31,7 +35,7 @@ router.get('/me', async (req, res) => {
 router.get('/dashboard', async (req, res) => {
   try {
     const id = req.agent.id;
-    const [leadStats, revenue, wallet, recent, report, targets] = await Promise.all([
+    const [leadStats, revenue, wallet, recent, report, targets, currentEngagement] = await Promise.all([
       db.get(`SELECT COUNT(*) total_leads,
         SUM(CASE WHEN status IN ('QUALIFIED','MEETING_SCHEDULED','PROPOSAL_PREPARATION','PROPOSAL_SENT','NEGOTIATION','WON') THEN 1 ELSE 0 END) qualified_leads,
         SUM(CASE WHEN status = 'WON' THEN 1 ELSE 0 END) converted_clients,
@@ -45,15 +49,50 @@ router.get('/dashboard', async (req, res) => {
         FROM agent_wallet_ledger_entries WHERE agent_id = ?`, [id]),
       db.all('SELECT entry_reference, transaction_type, balance_bucket, amount, currency, description, created_at FROM agent_wallet_ledger_entries WHERE agent_id = ? ORDER BY created_at DESC LIMIT 5', [id]),
       db.get(`SELECT status, week_start, submitted_at FROM agent_weekly_reports WHERE agent_id = ? ORDER BY week_start DESC LIMIT 1`, [id]),
-      db.all(`SELECT metric_key, target_value, period FROM agent_target_assignments WHERE agent_id = ? AND date(effective_from) <= date('now') AND (effective_to IS NULL OR date(effective_to) >= date('now'))`, [id])
+      db.all(`SELECT metric_key, target_value, period FROM agent_target_assignments WHERE agent_id = ? AND date(effective_from) <= date('now') AND (effective_to IS NULL OR date(effective_to) >= date('now'))`, [id]),
+      db.get(`SELECT id, check_in_at, check_in_note FROM marketing_agent_engagement_attendance WHERE agent_id = ? AND status = 'OPEN' ORDER BY check_in_at DESC LIMIT 1`, [id])
     ]);
     const total = Number(leadStats?.total_leads || 0);
     res.json({
       metrics: { ...leadStats, verified_revenue: money(revenue?.verified_revenue), conversion_rate: total ? money((Number(leadStats.converted_clients || 0) / total) * 100) : 0 },
       wallet: { available_balance: money(wallet?.available_balance), pending_commission: money(wallet?.pending_commission), total_earned: money(wallet?.total_earned), recent },
-      weeklyReport: report || null, targets
+      weeklyReport: report || null, targets, currentEngagement: currentEngagement || null
     });
   } catch (error) { res.status(500).json({ error: 'Failed to load agent dashboard' }); }
+});
+
+router.get('/attendance', async (req, res) => {
+  try {
+    const attendance = await db.all(`SELECT id, engagement_date, check_in_at, check_out_at, check_in_note, check_out_note, status
+      FROM marketing_agent_engagement_attendance WHERE agent_id = ? ORDER BY check_in_at DESC LIMIT 100`, [req.agent.id]);
+    const active = attendance.find((entry) => entry.status === 'OPEN') || null;
+    res.json({ attendance, active });
+  } catch (error) { res.status(500).json({ error: 'Failed to load engagement attendance' }); }
+});
+
+router.post('/attendance/check-in', async (req, res) => {
+  try {
+    const open = await db.get(`SELECT id FROM marketing_agent_engagement_attendance WHERE agent_id = ? AND status = 'OPEN' ORDER BY check_in_at DESC LIMIT 1`, [req.agent.id]);
+    if (open) return res.status(409).json({ error: 'Check out of the current engagement before checking in again' });
+    const note = String(req.body.engagement_note || '').trim();
+    if (note.length > 1000) return res.status(400).json({ error: 'Engagement note must be 1,000 characters or less' });
+    const result = await db.run(`INSERT INTO marketing_agent_engagement_attendance (agent_id, engagement_date, check_in_note, status)
+      VALUES (?, CURRENT_DATE, ?, 'OPEN')`, [req.agent.id, note || null]);
+    await logAction(req.user.id, 'agent_engagement_check_in', 'marketing_agent_engagement_attendance', result.lastID, { note }, req);
+    res.status(201).json({ id: result.lastID, status: 'OPEN' });
+  } catch (error) { res.status(500).json({ error: 'Failed to check in to engagement' }); }
+});
+
+router.post('/attendance/check-out', async (req, res) => {
+  try {
+    const open = await db.get(`SELECT id FROM marketing_agent_engagement_attendance WHERE agent_id = ? AND status = 'OPEN' ORDER BY check_in_at DESC LIMIT 1`, [req.agent.id]);
+    if (!open) return res.status(400).json({ error: 'No active engagement check-in was found' });
+    const note = String(req.body.check_out_note || '').trim();
+    if (note.length > 1000) return res.status(400).json({ error: 'Check-out note must be 1,000 characters or less' });
+    await db.run(`UPDATE marketing_agent_engagement_attendance SET check_out_at = CURRENT_TIMESTAMP, check_out_note = ?, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [note || null, open.id]);
+    await logAction(req.user.id, 'agent_engagement_check_out', 'marketing_agent_engagement_attendance', open.id, { note }, req);
+    res.json({ id: open.id, status: 'COMPLETED' });
+  } catch (error) { res.status(500).json({ error: 'Failed to check out of engagement' }); }
 });
 
 router.get('/leads', async (req, res) => {

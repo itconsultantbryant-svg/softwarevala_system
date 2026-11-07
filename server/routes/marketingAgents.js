@@ -603,6 +603,16 @@ router.get('/agents', authenticateToken, async (req, res) => {
   }
 });
 
+router.get('/attendance', authenticateToken, svc.requirePerm('marketing_agent.view'), async (req, res) => {
+  try {
+    const attendance = await db.all(`SELECT ea.*, a.full_name, a.agent_code, a.status AS agent_status
+      FROM marketing_agent_engagement_attendance ea
+      JOIN marketing_agents a ON a.id = ea.agent_id
+      ORDER BY CASE WHEN ea.status = 'OPEN' THEN 0 ELSE 1 END, ea.check_in_at DESC LIMIT 250`);
+    res.json({ attendance });
+  } catch (error) { fail(res, error, 'Failed to load agent engagement attendance'); }
+});
+
 router.get('/onboarding-sessions', authenticateToken, svc.requirePerm('marketing_agent.onboarding.manage'), async (_req, res) => {
   try {
     const sessions = await db.all(`SELECT s.*, COUNT(p.id) participant_count,
@@ -666,6 +676,8 @@ router.get('/agents/:id', authenticateToken, async (req, res) => {
     const notes = await db.all('SELECT n.*, u.name AS author_name FROM marketing_agent_notes n LEFT JOIN users u ON u.id = n.author_id WHERE n.agent_id = ? ORDER BY n.created_at DESC', [agent.id]);
     const history = await db.all('SELECT h.*, u.name AS approver_name FROM marketing_agent_status_history h LEFT JOIN users u ON u.id = h.approved_by WHERE h.agent_id = ? ORDER BY h.created_at DESC', [agent.id]);
     const leads = await db.all('SELECT id, lead_number, company_name, status, created_at FROM sales_leads WHERE referral_agent_id = ? ORDER BY created_at DESC', [agent.id]);
+    const attendance = await db.all(`SELECT id, engagement_date, check_in_at, check_out_at, check_in_note, check_out_note, status
+      FROM marketing_agent_engagement_attendance WHERE agent_id = ? ORDER BY check_in_at DESC LIMIT 25`, [agent.id]);
     const commissions = svc.hasPermission(req.user, 'commission.view') || (await ownAgent(req.user))?.id === agent.id
       ? await db.all('SELECT * FROM commissions WHERE agent_id = ? ORDER BY created_at DESC', [agent.id])
       : [];
@@ -677,7 +689,8 @@ router.get('/agents/:id', authenticateToken, async (req, res) => {
       notes,
       history,
       leads,
-      commissions
+       commissions,
+       attendance
     });
   } catch (error) {
     fail(res, error, 'Failed to load agent');

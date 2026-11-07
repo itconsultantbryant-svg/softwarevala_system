@@ -133,14 +133,23 @@ export const AgentProfile = () => {
       </table>
       <h5>Leads</h5>
       <ul>{(data.leads || []).map((lead) => <li key={lead.id}><Link to={`/marketing/leads/${lead.id}`}>{lead.lead_number}</Link> · {lead.status}</li>)}</ul>
-      <h5>Commissions</h5>
-      <ul>{(data.commissions || []).map((row) => <li key={row.id}>{row.commission_number}: {row.final_commission} ({row.status})</li>)}</ul>
-      <h5>Status history</h5>
+       <h5>Commissions</h5>
+       <ul>{(data.commissions || []).map((row) => <li key={row.id}>{row.commission_number}: {row.final_commission} ({row.status})</li>)}</ul>
+       <h5>Engagement attendance</h5>
+       <table className="table table-sm"><thead><tr><th>Date</th><th>Check in</th><th>Check out</th><th>Engagement</th><th>Status</th></tr></thead><tbody>{(data.attendance || []).map((entry) => <tr key={entry.id}><td>{entry.engagement_date}</td><td>{entry.check_in_at}</td><td>{entry.check_out_at || '—'}</td><td>{entry.check_in_note || '—'}</td><td>{entry.status}</td></tr>)}{!(data.attendance || []).length && <tr><td colSpan="5" className="text-muted">No engagement attendance recorded.</td></tr>}</tbody></table>
+       <h5>Status history</h5>
       <ul>{(data.history || []).map((row) => <li key={row.id}>{row.effective_date}: {row.status} — {row.reason}</li>)}</ul>
       <ReviewForm id={id} />
       {agent.agent_code && <a className="btn btn-outline-primary" href={`${api.defaults.baseURL}/marketing-agents/agents/${agent.id}/statement.pdf`} onClick={(e) => { e.preventDefault(); api.get(`/marketing-agents/agents/${agent.id}/statement.pdf`, { responseType: 'blob' }).then((res) => { const url = URL.createObjectURL(res.data); const link = document.createElement('a'); link.href = url; link.download = `${agent.agent_code}-statement.pdf`; link.click(); }); }}>Download PDF statement</a>}
     </div>
   );
+};
+
+export const AgentAttendance = () => {
+  const [attendance, setAttendance] = useState([]);
+  const [error, setError] = useState('');
+  useEffect(() => { api.get('/marketing-agents/attendance').then((res) => setAttendance(res.data.attendance || [])).catch((err) => setError(err.response?.data?.error || 'Unable to load agent attendance.')); }, []);
+  return <div className="marketing-page"><PageHeader title="Agent Engagement Attendance" subtitle="Live check-in and check-out activity for freelance marketing agents." />{error && <div className="alert alert-danger">{error}</div>}<table className="table"><thead><tr><th>Agent</th><th>Engagement date</th><th>Check in</th><th>Check out</th><th>Engagement</th><th>Status</th></tr></thead><tbody>{attendance.map((entry) => <tr key={entry.id}><td><Link to={`/marketing/agents/${entry.agent_id}`}>{entry.agent_code || '—'} {entry.full_name}</Link></td><td>{entry.engagement_date}</td><td>{entry.check_in_at}</td><td>{entry.check_out_at || '—'}</td><td>{entry.check_in_note || '—'}</td><td><span className={`badge ${entry.status === 'OPEN' ? 'bg-success' : 'bg-secondary'}`}>{entry.status}</span></td></tr>)}{!attendance.length && <tr><td colSpan="6" className="text-muted">No agent engagement attendance has been recorded.</td></tr>}</tbody></table></div>;
 };
 
 const ReviewForm = ({ id }) => {
