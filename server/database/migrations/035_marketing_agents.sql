@@ -476,28 +476,24 @@ INSERT OR IGNORE INTO agent_target_settings (metric_key, label, target_value, pe
 
 INSERT INTO commission_policies (policy_code, name, version, effective_from, status, notes)
 SELECT 'SVL-COMM-2026-V1', 'Marketing Agent Commission 2026 V1', 'V1', '2026-01-01', 'DRAFT',
-       'Proposed rates pending formal management approval. Historical calculations use the policy version stored on each commission.'
+       '15% for $1–$500, 20% for $500.01–$4,999.99, and 30% for $5,000 and above. Historical calculations use the policy version stored on each commission.'
 WHERE NOT EXISTS (SELECT 1 FROM commission_policies WHERE policy_code = 'SVL-COMM-2026-V1');
 
 INSERT INTO commission_policy_tiers (policy_id, min_amount, max_amount, rate_percent, bonus_note, sort_order)
-SELECT p.id, 1, 500, 10, NULL, 1 FROM commission_policies p
+SELECT p.id, 1, 500, 15, NULL, 1 FROM commission_policies p
 WHERE p.policy_code = 'SVL-COMM-2026-V1'
 AND NOT EXISTS (SELECT 1 FROM commission_policy_tiers t WHERE t.policy_id = p.id);
 
 INSERT INTO commission_policy_tiers (policy_id, min_amount, max_amount, rate_percent, bonus_note, sort_order)
-SELECT p.id, 501, 1500, 12, NULL, 2 FROM commission_policies p
+SELECT p.id, 500.01, 4999.99, 20, NULL, 2 FROM commission_policies p
 WHERE p.policy_code = 'SVL-COMM-2026-V1'
 AND (SELECT COUNT(*) FROM commission_policy_tiers t WHERE t.policy_id = p.id) = 1;
 
 INSERT INTO commission_policy_tiers (policy_id, min_amount, max_amount, rate_percent, bonus_note, sort_order)
-SELECT p.id, 1501, 5000, 15, NULL, 3 FROM commission_policies p
+SELECT p.id, 5000, NULL, 30, NULL, 3 FROM commission_policies p
 WHERE p.policy_code = 'SVL-COMM-2026-V1'
 AND (SELECT COUNT(*) FROM commission_policy_tiers t WHERE t.policy_id = p.id) = 2;
 
-INSERT INTO commission_policy_tiers (policy_id, min_amount, max_amount, rate_percent, bonus_note, sort_order)
-SELECT p.id, 5000.01, NULL, 15, 'Plus separately approved bonus where applicable', 4 FROM commission_policies p
-WHERE p.policy_code = 'SVL-COMM-2026-V1'
-AND (SELECT COUNT(*) FROM commission_policy_tiers t WHERE t.policy_id = p.id) = 3;
 
 CREATE INDEX IF NOT EXISTS idx_ma_app_status ON marketing_agent_applications(status);
 CREATE INDEX IF NOT EXISTS idx_ma_app_county ON marketing_agent_applications(county);

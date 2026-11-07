@@ -26,13 +26,14 @@ const interview = scoreInterview({
 assert.strictEqual(interview.total, 100);
 
 const tiers = [
-  { id: 1, min_amount: 1, max_amount: 500, rate_percent: 10, sort_order: 1 },
-  { id: 2, min_amount: 501, max_amount: 1500, rate_percent: 12, sort_order: 2 },
-  { id: 3, min_amount: 1501, max_amount: 5000, rate_percent: 15, sort_order: 3 },
-  { id: 4, min_amount: 5000.01, max_amount: null, rate_percent: 15, sort_order: 4 }
+  { id: 1, min_amount: 1, max_amount: 500, rate_percent: 15, sort_order: 1 },
+  { id: 2, min_amount: 500.01, max_amount: 4999.99, rate_percent: 20, sort_order: 2 },
+  { id: 3, min_amount: 5000, max_amount: null, rate_percent: 30, sort_order: 3 }
 ];
-assert.strictEqual(rateForAmount(tiers, 800).rate, 12);
-assert.strictEqual(rateForAmount(tiers, 800).gross, 96);
+assert.strictEqual(rateForAmount(tiers, 500).rate, 15);
+assert.strictEqual(rateForAmount(tiers, 800).rate, 20);
+assert.strictEqual(rateForAmount(tiers, 800).gross, 160);
+assert.strictEqual(rateForAmount(tiers, 5000).rate, 30);
 assert.strictEqual(rateForAmount(tiers, 0), null);
 assert.strictEqual(hasPermission({ role: 'Staff' }, 'commission.approve'), false);
 assert.strictEqual(hasPermission({ role: 'Admin' }, 'marketing_agent.activate'), true);

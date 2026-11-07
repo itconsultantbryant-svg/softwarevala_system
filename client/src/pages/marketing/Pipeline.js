@@ -109,7 +109,7 @@ export const Commissions = () => {
   };
   return (
     <div className="marketing-page">
-      <PageHeader title="Commissions" subtitle="Calculated from verified cash received. The draft 2026 policy is inactive until management activates it." />
+      <PageHeader title="Commissions" subtitle="Calculated from verified cash received using the active commission policy." />
       <h5>Policies</h5>
       <ul>
         {policies.map((policy) => (
