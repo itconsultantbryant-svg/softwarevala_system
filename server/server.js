@@ -341,6 +341,7 @@ async function initializeDatabase() {
     const agentReportingJourneyPath = path.join(__dirname, 'database/migrations/038_agent_reporting_and_journeys.sql');
     const agentLifecycleAuditPath = path.join(__dirname, 'database/migrations/039_agent_lifecycle_audit.sql');
     const agentAuthSecurityPath = path.join(__dirname, 'database/migrations/040_agent_auth_security.sql');
+    const freelanceAgentRolePath = path.join(__dirname, 'database/migrations/041_freelance_agent_user_role.sql');
     
     if (tables.length === 0) {
       console.log('Initializing database schema...');
@@ -676,7 +677,7 @@ async function initializeDatabase() {
           }
         }
       }
-      for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath]) {
+      for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath, freelanceAgentRolePath]) {
         if (!fs.existsSync(migrationFile)) continue;
         const marketingSql = fs.readFileSync(migrationFile, 'utf8');
         for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
@@ -2482,7 +2483,7 @@ async function initializeDatabase() {
       }
     }
 
-    for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath]) {
+    for (const migrationFile of [marketingAgentsPath, marketingSyncPath, agentPortalPath, agentReportingJourneyPath, agentLifecycleAuditPath, agentAuthSecurityPath, freelanceAgentRolePath]) {
       if (!fs.existsSync(migrationFile)) continue;
       const marketingSql = fs.readFileSync(migrationFile, 'utf8');
       for (const statement of marketingSql.split(';').filter((s) => s.trim())) {
